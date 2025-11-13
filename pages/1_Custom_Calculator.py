@@ -41,10 +41,19 @@ with col1:
     # --- Mode-Specific UI ---
     if mode == "Single Item":
         st.subheader("3. Select Item")
+
+        # --- FIX 1 (ValueError) ---
+        # Try to find 'shark' as a default, but if it's not in the list,
+        # fall back to 0 (the first item) to prevent a crash.
+        try:
+            default_index_1 = item_names_list.index("shark")
+        except ValueError:
+            default_index_1 = 0 # Default to the first item
+
         item_name = st.selectbox(
             "Item Name:",
             options=item_names_list,
-            index=item_names_list.index("shark") # Default to 'shark'
+            index=default_index_1 # Use the safe default index
         )
 
         if st.button("Calculate Single Item Inflation", type="primary", use_container_width=True):
@@ -94,11 +103,19 @@ with col1:
 
         # --- UI for adding items to the basket ---
         form_col1, form_col2, form_col3 = st.columns([3, 1, 1])
+
+        # --- FIX 2 (ValueError) ---
+        # Apply the same fix here for the second select box.
+        try:
+            default_index_2 = item_names_list.index("shark")
+        except ValueError:
+            default_index_2 = 0 # Default to the first item
+
         with form_col1:
             new_item_name = st.selectbox(
                 "Item Name:",
                 options=item_names_list,
-                index=item_names_list.index("shark"),
+                index=default_index_2, # Use the safe default index
                 key="basket_item_name"
             )
         with form_col2:
