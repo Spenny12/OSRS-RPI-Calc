@@ -6,13 +6,13 @@ from config import DEFAULT_RPI_BASKET
 
 st.set_page_config(page_title="OSRS Inflation Calculator", page_icon="📈", layout="wide")
 
-st.title("📈 OSRS Inflation Calculator")
+st.title("OSRS Inflation Calculator")
 
 st.markdown("""
 Welcome! This tool calculates the inflation rate for items in Old School Runescape.
 
 The "OSRS RPI" displayed below is a weighted inflation rate based on a default basket of popular items,
-calculated from **90 days ago to today**.
+calculated from **one year ago (365 days) to today**.
 
 Use the **"Custom Calculator"** page in the sidebar to:
 - Calculate inflation for any single item.
@@ -20,8 +20,8 @@ Use the **"Custom Calculator"** page in the sidebar to:
 - Select custom date ranges.
 """)
 
-# --- NEW: Changed default to 90 days for API reliability ---
-st.header(f"Default OSRS 'RPI' (Last 90 Days)")
+# --- NEW: Changed default back to 365 days ---
+st.header(f"Default OSRS 'RPI' (Last 365 Days)")
 
 # --- Load Mapping Data ---
 # Use a spinner for good user experience
@@ -32,8 +32,8 @@ with st.spinner("Loading OSRS item database..."):
 if mapping_dict and item_names_list:
     # --- RPI Calculation ---
     today = datetime.now().date()
-    # --- NEW: Changed default to 90 days ---
-    start_date = today - timedelta(days=90)
+    # --- NEW: Changed default back to 365 days ---
+    start_date = today - timedelta(days=365)
 
     with st.spinner("Calculating default RPI..."):
         rpi_value, excluded_items = calculate_rpi(
