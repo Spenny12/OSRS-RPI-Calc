@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from api_client import get_price_history
 
 def calculate_inflation_percent(old_price, new_price):
@@ -76,19 +76,20 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
 def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True):
     """
     Calculates the weighted RPI for a basket of goods, handling missing items.
+    The show_progress flag is used to suppress the Streamlit progress bar
+    when running historical calculations on the Home page.
     """
 
     valid_results = []
     excluded_items = []
     total_valid_weight = 0.0
 
-    # Only show progress bar if show_progress is True
     progress_bar = None
     if show_progress:
         progress_bar = st.progress(0, text="Initializing RPI calculation...")
 
     for i, (item_name, original_weight) in enumerate(basket.items()):
-        if show_progress and progress_bar:
+        if show_progress:
             progress_text = f"Calculating for '{item_name.lower()}' ({i+1}/{len(basket)})..."
             progress_bar.progress((i+1) / len(basket), text=progress_text)
 
@@ -101,10 +102,10 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
 
         # 2. Get price history
         item_id = item_info['id']
+        # This function is cached, so repeated calls are fast
         price_df = get_price_history(item_id)
 
         if price_df is None or price_df.empty:
-            # --- THIS ERROR MESSAGE IS NOW CORRECT ---
             excluded_items.append(f"{item_name} (No price data from Wiki API)")
             continue
 
@@ -117,6 +118,7 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
             excluded_items.append(f"{item_name} (Did not exist at start date)")
             continue
 
+        # FIX: The NameError was fixed here in the previous step (new_row_price_data -> new_price_data)
         if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
             excluded_items.append(f"{item_name} (No data at end date)")
             continue
@@ -134,7 +136,7 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
         })
         total_valid_weight += original_weight
 
-    if show_progress and progress_bar:
+    if progress_bar:
         progress_bar.empty()
 
     # --- Final RPI Calculation (Re-weighting) ---
@@ -152,3 +154,60 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
         final_rpi += weighted_contribution
 
     return final_rpi, excluded_items
+
+def calculate_monthly_rpi_dataframe(basket, num_months, mapping_dict):
+    """
+    Calculates the Year-over-Year RPI for the last N months.
+    Returns a pandas DataFrame suitable for a Streamlit chart.
+    """
+    # Use the first day of the current month as the anchor
+    today = datetime.now().date()
+    current_month_start = today.replace(day=1)
+
+    # DataFrame to store monthly results
+    monthly_data = []
+
+    # Calculate RPI for each month backwards
+    for i in range(num_months):
+
+        # Determine the target month's end (last day of the month we are calculating)
+        # This month's end date is the 'new' date.
+
+        # Calculate start date of the target month (e.g., Nov 1, 2024)
+        target_month_start = (current_month_start - timedelta(days=1)).replace(day=1)
+
+        # Calculate end date of the target month (e.g., Oct 31, 2024)
+        target_month_end = current_month_start - timedelta(days=1)
+
+        # The 'old' date is 1 year before the target month end (e.g., Oct 31, 2023)
+        yoy_old_date = target_month_end - timedelta(days=365)
+
+        # Run the RPI calculation (silently)
+        rpi_value, _ = calculate_rpi(
+            basket=basket,
+            start_date=yoy_old_date,
+            end_date=target_month_end,
+            mapping_dict=mapping_dict,
+            show_progress=False # Crucial for performance and UI cleanliness
+        )
+
+        # Store the result
+        if rpi_value is not None:
+            monthly_data.append({
+                'Month': target_month_end,
+                'YoY RPI (%)': rpi_value
+            })
+
+        # Move the anchor back one month
+        current_month_start = target_month_start
+
+    # Create DataFrame, set index, and sort chronologically
+    df = pd.DataFrame(monthly_data)
+    if df.empty:
+        return pd.DataFrame({'Month': [], 'YoY RPI (%)': []})
+
+    df['Month'] = pd.to_datetime(df['Month'])
+    df = df.set_index('Month')
+    df = df.sort_index()
+
+    return df

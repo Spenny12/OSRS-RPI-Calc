@@ -1,7 +1,8 @@
 import streamlit as st
+import pandas as pd
 from datetime import datetime, timedelta
 from api_client import get_item_mapping
-from calculator import calculate_rpi
+from calculator import calculate_rpi, calculate_monthly_rpi_dataframe
 from config import DEFAULT_RPI_BASKET
 
 st.set_page_config(page_title="OSRS Inflation Calculator", page_icon="📈", layout="wide")
@@ -9,18 +10,13 @@ st.set_page_config(page_title="OSRS Inflation Calculator", page_icon="📈", lay
 st.title("OSRS Inflation Calculator")
 
 st.markdown("""
-Hi Kier
+Welcome! This tool calculates the inflation rate for items in Old School Runescape.
 
-The "OSRS RPI" displayed below compares weighted inflation rates over different periods
-based on a default basket of popular items.
+The **Current RPI** figures below are based on a default basket of popular items.
+The new **Historical Chart** shows the Year-over-Year (YoY) RPI for the last two years.
 
-Use the **"Custom Calculator"** page in the sidebar to:
-- Calculate inflation for any single item.
-- Build your own custom RPI basket.
-- Select custom date ranges.
+Use the **"Custom Calculator"** page in the sidebar to build your own basket or analyze single items.
 """)
-
-st.header(f"Default OSRS 'RPI' Figures")
 
 # --- Load Mapping Data ---
 # Use a spinner for good user experience
@@ -29,98 +25,142 @@ with st.spinner("Loading OSRS item database..."):
 
 # --- Main App Logic ---
 if mapping_dict and item_names_list:
-    # --- Define all 8 dates for the calculations ---
+
     today = datetime.now().date()
 
-    # YoY Dates: (Last 30 days) vs (Same 30 days, 1 year ago)
-    yoy_current_start = today - timedelta(days=30)
+    # ------------------------------------------------
+    # 1. CURRENT RPI CALCULATIONS (MoM & YoY)
+    # ------------------------------------------------
+    st.header("Current RPI Figures (Default Basket)")
+
+    # YoY 30-Day: Compare last 30 days vs. 30 days same period last year
     yoy_current_end = today
-    yoy_prev_year_start = today - timedelta(days=365 + 30)
-    yoy_prev_year_end = today - timedelta(days=365)
+    yoy_current_start = today - timedelta(days=30)
+    yoy_old_start = yoy_current_start - timedelta(days=365)
+    yoy_old_end = yoy_current_end - timedelta(days=365)
 
-    # MoM Dates: (Last 7 days) vs (Same 7 days, 1 month ago)
-    mom_current_start = today - timedelta(days=7)
+    # MoM 7-Day: Compare last 7 days vs. 7 days same period last month
     mom_current_end = today
-    mom_prev_month_start = today - timedelta(days=30 + 7)
-    mom_prev_month_end = today - timedelta(days=30)
+    mom_current_start = today - timedelta(days=7)
+    mom_old_start = mom_current_start - timedelta(days=30)
+    mom_old_end = mom_current_end - timedelta(days=30)
 
-    # --- Run all 4 calculations ---
-    with st.spinner("Calculating RPI figures for YoY and MoM..."):
-        # Run YoY calcs (silently)
-        rpi_yoy_current, excluded_yoy_curr = calculate_rpi(
-            DEFAULT_RPI_BASKET, yoy_current_start, yoy_current_end, mapping_dict, show_progress=False
-        )
-        rpi_yoy_prev, excluded_yoy_prev = calculate_rpi(
-            DEFAULT_RPI_BASKET, yoy_prev_year_start, yoy_prev_year_end, mapping_dict, show_progress=False
+    with st.spinner("Calculating current RPI figures..."):
+        # 1. YoY (Current 30 days vs. 30 days last year)
+        # Calculates inflation between the 30 days starting yoy_old_start and the 30 days starting yoy_current_start
+        rpi_yoy_current, _ = calculate_rpi(
+            DEFAULT_RPI_BASKET, yoy_old_start, yoy_current_end, mapping_dict, show_progress=False
         )
 
-        # Run MoM calcs (silently)
+        # 2. MoM (Current 7 days vs. 7 days last month)
+        # Calculates inflation between the 7 days starting mom_old_start and the 7 days starting mom_current_start
         rpi_mom_current, excluded_mom_curr = calculate_rpi(
-            DEFAULT_RPI_BASKET, mom_current_start, mom_current_end, mapping_dict, show_progress=False
-        )
-        rpi_mom_prev, excluded_mom_prev = calculate_rpi(
-            DEFAULT_RPI_BASKET, mom_prev_month_start, mom_prev_month_end, mapping_dict, show_progress=False
+            DEFAULT_RPI_BASKET, mom_old_start, mom_current_end, mapping_dict, show_progress=False
         )
 
-    # --- Display Results in Columns ---
+    # --- Display Current Metrics ---
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Year-over-Year Inflation")
-        st.markdown(f"Compares 30-day inflation from `{yoy_current_start}` to `{yoy_current_end}` vs. the same period last year.")
-
+        yoy_label = f"YoY RPI ({yoy_old_end} to {yoy_current_end})"
         if rpi_yoy_current is not None:
-            # Calculate delta if previous data exists
-            delta_yoy = f"{rpi_yoy_current - rpi_yoy_prev:.2f} pt change" if rpi_yoy_prev is not None else None
-            st.metric(
-                label="Current 30-Day RPI",
-                value=f"{rpi_yoy_current:.2f}%",
-                delta=delta_yoy
-            )
+            st.metric(label=yoy_label, value=f"{rpi_yoy_current:.2f}%")
         else:
-            st.error("Could not calculate current 30-day RPI.")
-
-        if rpi_yoy_prev is not None:
-            st.metric(
-                label=f"Prior Year 30-Day RPI ({yoy_prev_year_end})",
-                value=f"{rpi_yoy_prev:.2f}%"
-            )
-        else:
-            st.warning("No RPI data for the prior year period.")
+            st.warning(f"Could not calculate {yoy_label}. Data missing.")
 
     with col2:
-        st.subheader("Month-over-Month Inflation")
-        st.markdown(f"Compares 7-day inflation from `{mom_current_start}` to `{mom_current_end}` vs. the same period last month.")
-
+        mom_label = f"MoM RPI ({mom_old_end} to {mom_current_end})"
         if rpi_mom_current is not None:
-            # Calculate delta if previous data exists
-            delta_mom = f"{rpi_mom_current - rpi_mom_prev:.2f} pt change" if rpi_mom_prev is not None else None
-            st.metric(
-                label="Current 7-Day RPI",
-                value=f"{rpi_mom_current:.2f}%",
-                delta=delta_mom
-            )
+            st.metric(label=mom_label, value=f"{rpi_mom_current:.2f}%")
         else:
-            st.error("Could not calculate current 7-day RPI.")
+            st.warning(f"Could not calculate {mom_label}. Data missing.")
 
-        if rpi_mom_prev is not None:
-            st.metric(
-                label=f"Prior Month 7-Day RPI ({mom_prev_month_end})",
-                value=f"{rpi_mom_prev:.2f}%"
+
+    # ------------------------------------------------
+    # 2. MONTHLY HISTORICAL RPI CHART (Last 24 Months)
+    # ------------------------------------------------
+    st.subheader("Monthly YoY RPI Trend (Last 24 Months)")
+
+    with st.spinner("Building 24-month historical chart..."):
+        historical_df = calculate_monthly_rpi_dataframe(
+            basket=DEFAULT_RPI_BASKET,
+            num_months=24,
+            mapping_dict=mapping_dict
+        )
+
+    if not historical_df.empty:
+        # Streamlit's line_chart uses the index as the x-axis automatically
+        st.line_chart(historical_df, y='YoY RPI (%)')
+    else:
+        st.error("Historical data could not be generated. Check API connection or data availability.")
+
+    st.markdown("---")
+
+
+    # ------------------------------------------------
+    # 3. HISTORICAL DATE CALCULATOR
+    # ------------------------------------------------
+    st.header("Historical RPI Date Checker")
+    st.markdown("Select a date in the past to see the 7-day MoM and 30-day YoY RPI calculated from that specific point in time.")
+
+    # Use max=today to prevent future date selection
+    historical_date = st.date_input(
+        "Select Historical Date:",
+        value=today - timedelta(days=90),
+        max_value=today
+    )
+
+    if st.button("Calculate Historical Figures", type="primary"):
+        # --- Define historical periods based on selected date ---
+
+        # MoM 7-Day from historical date
+        h_mom_current_end = historical_date
+        h_mom_current_start = historical_date - timedelta(days=7)
+        h_mom_old_start = h_mom_current_start - timedelta(days=30)
+        h_mom_old_end = h_mom_current_end - timedelta(days=30)
+
+        # YoY 30-Day from historical date
+        h_yoy_current_end = historical_date
+        h_yoy_current_start = historical_date - timedelta(days=30)
+        h_yoy_old_start = h_yoy_current_start - timedelta(days=365)
+        h_yoy_old_end = h_yoy_current_end - timedelta(days=365)
+
+        with st.spinner(f"Calculating RPI figures relative to {historical_date}..."):
+
+            # 1. YoY (30 days ending at historical date vs. 30 days last year)
+            h_rpi_yoy, h_excluded_yoy = calculate_rpi(
+                DEFAULT_RPI_BASKET, h_yoy_old_start, h_yoy_current_end, mapping_dict, show_progress=False
             )
-        else:
-            st.warning("No RPI data for the prior month period.")
 
-    # --- Show excluded items (collated from all runs) ---
-    all_excluded = set(excluded_yoy_curr + excluded_yoy_prev + excluded_mom_curr + excluded_mom_prev)
-    if all_excluded:
-        with st.expander("View items excluded from calculations"):
-            st.warning("Some items were excluded from one or more calculations (e.g., ID not found, no price data for a period).")
-            for item in all_excluded:
-                st.markdown(f"- {item}")
+            # 2. MoM (7 days ending at historical date vs. 7 days last month)
+            h_rpi_mom, h_excluded_mom = calculate_rpi(
+                DEFAULT_RPI_BASKET, h_mom_old_start, h_mom_current_end, mapping_dict, show_progress=False
+            )
 
-    st.subheader("Default Basket Definition")
-    st.json({k: f"{v*100:.0f}%" for k, v in DEFAULT_RPI_BASKET.items()})
+        # --- Display Historical Metrics ---
+        h_col1, h_col2 = st.columns(2)
+
+        with h_col1:
+            h_yoy_label = f"YoY RPI ({h_yoy_old_end} to {h_yoy_current_end})"
+            if h_rpi_yoy is not None:
+                st.metric(label=h_yoy_label, value=f"{h_rpi_yoy:.2f}%")
+            else:
+                st.warning(f"Could not calculate {h_yoy_label}. Data missing.")
+
+        with h_col2:
+            h_mom_label = f"MoM RPI ({h_mom_old_end} to {h_mom_current_end})"
+            if h_rpi_mom is not None:
+                st.metric(label=h_mom_label, value=f"{h_rpi_mom:.2f}%")
+            else:
+                st.warning(f"Could not calculate {h_mom_label}. Data missing.")
+
+        if h_excluded_yoy or h_excluded_mom:
+             all_excluded = set(h_excluded_yoy) | set(h_excluded_mom)
+             if all_excluded:
+                st.warning(f"Note: Some items were excluded from these historical calculations due to missing data:")
+                for item in sorted(list(all_excluded)):
+                    st.markdown(f"- {item}")
+
 
 else:
     st.error("Failed to load OSRS item database. The API might be down. Please try again later.")
