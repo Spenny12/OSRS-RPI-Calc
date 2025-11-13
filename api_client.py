@@ -28,7 +28,7 @@ def get_item_mapping():
                     'id': item['id'],
                     'name': item['name']
                 }
-                item_names_list.append(item_name_lower)
+                item_names_list.append(item['name']) # Use the proper cased name for the list
 
         item_names_list.sort()
 
@@ -46,8 +46,10 @@ def get_price_history(item_id):
     It should provide the complete, non-truncated history for all items.
     """
     try:
-        # --- THIS IS THE NEW API ENDPOINT ---
-        url = f"https://api.weirdgloop.org/exchange/history/os/{item_id}/all"
+        # --- THIS IS THE CORRECTED API ENDPOINT ---
+        # The bug was adding "/all" at the end, which is an invalid filter.
+        # The correct endpoint is just .../history/os/{item_id}
+        url = f"https://api.weirdgloop.org/exchange/history/os/{item_id}"
 
         response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
@@ -82,8 +84,8 @@ def get_price_history(item_id):
         #    (This handles if there are multiple trades in one day)
         df_daily = df.resample('D').mean()
 
-        # 7. Fill all gaps.
-        df_daily['avgHighPrice'] = df_daily['avgHighPrice'].ffill().bfill()
+        # 7. Fill all gaps. bfill() fills NaNs at the start, ffill() fills the rest.
+        df_daily['avgHighPrice'] = df_daily['avgHighPrice'].bfill().ffill()
 
         return df_daily
 
