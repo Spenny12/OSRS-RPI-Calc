@@ -1,7 +1,9 @@
 # --- API Configuration ---
 # Set a user-agent as required by the wiki API
+# A descriptive User-Agent with a contact is required by the OSRS Wiki APIs
+# to prevent blocking.
 HEADERS = {
-    'User-Agent': 'OSRS Inflation Calculator - MyProject v1.0'
+    'User-Agent': 'OSRS Inflation Calculator - (github.com/spenny12/osrs-calc)'
 }
 
 # --- Default RPI Basket ---
