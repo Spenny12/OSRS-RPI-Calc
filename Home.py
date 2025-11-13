@@ -10,12 +10,12 @@ st.set_page_config(page_title="OSRS Inflation Calculator", page_icon="📈", lay
 st.title("OSRS Inflation Calculator")
 
 st.markdown("""
-Welcome! This tool calculates the inflation rate for items in Old School Runescape.
+Welcome! This is the Lil Chungies inflation calculator, created by Mod Kieren and Mod Spenny!
 
-The **OSRS RPI** below is a weighted inflation rate based on a default basket of 86 popular items.
+The **OSRS RPI** below is a weighted inflation rate based on a default basket of a load of popular items.
 The metrics are calculated using average high prices from the period specified.
 
-Use the **Custom Calculator** page in the sidebar to build your own basket or analyze a single item.
+Use the **Custom Calculator** page in the sidebar to build your own basket or analyse a single item. No skibidi toilet!
 """)
 
 # --- Load Mapping Data ---
