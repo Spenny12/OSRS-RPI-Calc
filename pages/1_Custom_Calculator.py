@@ -17,4 +17,6 @@ def load_mapping_data():
 mapping_dict, item_names_list = load_mapping_data()
 
 if not mapping_dict or not item_names_list:
-    st.error("
+    # This line was fixed. It was missing the closing ")
+    st.error("Failed to load item mapping data from the Wiki API. The app cannot continue. Please try refreshing.")
+    st.stop() # Added st.stop() because the app can't run without this data.
