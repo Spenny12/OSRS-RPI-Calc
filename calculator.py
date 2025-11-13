@@ -30,8 +30,8 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
     price_df = get_price_history(item_id)
 
     if price_df is None or price_df.empty:
-        # This error is now specific to the Jagex API
-        return {'error': f"No price data found for '{item_name}'. (The Jagex API may not list this item, or it's new)"}
+        # --- THIS ERROR MESSAGE IS NOW CORRECT ---
+        return {'error': f"No price data found for '{item_name}'. (The Wiki API may not list this item, or the request was blocked. Check User-Agent in config.py)"}
 
     try:
         # 3. Find the prices for the start and end dates
@@ -100,7 +100,8 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict):
         price_df = get_price_history(item_id)
 
         if price_df is None or price_df.empty:
-            excluded_items.append(f"{item_name} (No price data from Jagex API)")
+            # --- THIS ERROR MESSAGE IS NOW CORRECT ---
+            excluded_items.append(f"{item_name} (No price data from Wiki API)")
             continue
 
         # 3. Find prices at target dates
