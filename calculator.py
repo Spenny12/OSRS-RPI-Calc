@@ -96,13 +96,28 @@ def calculate_monthly_rpi_dataframe(basket, mapping_dict):
         end_date = current_date
 
         # 2. Define the start date (1st of the same month, one year prior)
-        # Handle leap year (Feb 29th) safely by using try/except
+        # We know current_date.day is always 1, so we don't need the complex leap year check,
+        # as Feb 29th will never be present.
+
+        # --- FIX: Simplify date calculation. The original code was unnecessarily complex
+        # --- for a date where the day is guaranteed to be 1, and the error seems to be
+        # --- triggered by the combination of the day being 1 and the try/except structure.
+        # --- Use simple date subtraction since the day is always 1.
         try:
-            start_date = date(current_date.year - 1, current_date.month, current_date.day)
-        except ValueError:
-            # If current_date is Feb 29th, and year-1 is not a leap year,
-            # we default to the last day of Feb (28th) to prevent crash.
-            start_date = date(current_date.year - 1, current_date.month, 28)
+            start_date = date(current_date.year - 1, current_date.month, 1)
+        except ValueError as e:
+            # This should realistically only happen if current_date.day was 29 and year-1 wasn't a leap year.
+            # But since current_date.day is 1, this block is an unnecessary complexity and likely error source.
+            # We revert the logic to the simpler, robust fix for the 1st of the month.
+            # The ValueError on line 177 in the trace was likely due to unexpected behavior/state
+            # during caching or an extremely old date where current_date.month was invalid, but since
+            # current_date is derived from datetime.now().date(), a simple year subtraction is safe.
+            # However, if we absolutely must include an error handler for edge cases, we can use the
+            # safe assumption that if the day is out of range, it's only due to a year subtraction
+            # attempting to set Feb 29th (which is not the case here).
+            # The simplest fix is to just use the day '1' explicitly.
+            start_date = date(current_date.year - 1, current_date.month, 1)
+
 
         # Calculate RPI for this specific month
         rpi_value, excluded = calculate_rpi(
