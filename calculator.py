@@ -154,7 +154,7 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
     return final_rpi, excluded_items
 
 
-@st.cache_data(ttl="6h") # Cache the entire historical calculation for 6 hours
+@st.cache_data(ttl="1h") # Cache the entire historical calculation for 6 hours
 def calculate_monthly_rpi_dataframe(basket, mapping_dict):
     """
     Calculates the Year-over-Year (YoY) RPI for the last day of every month
@@ -174,7 +174,19 @@ def calculate_monthly_rpi_dataframe(basket, mapping_dict):
         end_date = current_date
 
         # Start date for the YoY calculation (same day one year ago)
-        start_date = date(current_date.year - 1, current_date.month, current_date.day)
+       for _ in range(max_months):
+
+        # 1. Define the end date (1st of the current month)
+        end_date = current_date
+
+        # 2. Define the start date (1st of the same month, one year prior)
+        # Handle leap year (Feb 29th) safely by using try/except
+        try:
+            start_date = date(current_date.year - 1, current_date.month, current_date.day)
+        except ValueError:
+            # If current_date is Feb 29th, and year-1 is not a leap year,
+            # we default to the last day of Feb (28th) to prevent crash.
+            start_date = date(current_date.year - 1, current_date.month, 28)
 
         # Calculate RPI (silently)
         rpi_value, _ = calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=False)
