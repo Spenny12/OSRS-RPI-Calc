@@ -41,19 +41,22 @@ def get_item_mapping():
 @st.cache_data(ttl="10m")
 def get_price_history(item_id):
     """
-    --- NEW: Fetches full historical data from the 'weirdgloop' API ---
+    --- FINAL FIX: Fetches full historical data using the 'all' endpoint ---
     This is the underlying API the OSRS Wiki uses for its historical charts.
-    It should provide the complete, non-truncated history for all items.
+    It provides the complete, non-truncated history for all items.
     """
     try:
         # --- THIS IS THE CORRECTED API ENDPOINT ---
-        # The {game} parameter is 'osrs', not 'os'
-        url = f"https://api.weirdgloop.org/exchange/history/osrs/{item_id}"
+        # The filter is 'all', and the item ID is a query parameter.
+        url = f"https://api.weirdgloop.org/exchange/history/osrs/all?id={item_id}"
 
         response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
-        # This API returns a list of objects: [{"timestamp": 123, "price": 123, "volume": 123}]
-        price_history = response.json()
+
+        # This API now returns a single object: {"id": 385, "name": "Shark", "data": [...]}
+        # We only care about the 'data' list.
+        price_data = response.json()
+        price_history = price_data.get('data', [])
 
         if not price_history:
             return None
