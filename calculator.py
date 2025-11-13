@@ -13,13 +13,40 @@ def calculate_inflation_percent(old_price, new_price):
         return 0.0
     return ((new_price - old_price) / old_price) * 100.0
 
+def get_average_price_for_period(item_id, start_date, end_date):
+    """
+    Retrieves and calculates the average price of an item between start_date and end_date (inclusive).
+    Returns the average price or None if data is insufficient.
+    """
+    price_df = get_price_history(item_id)
+    if price_df is None or price_df.empty:
+        return None
+
+    # Filter the price history DataFrame to the requested period
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+
+    # Simple filtering on the index (date)
+    period_df = price_df[(price_df.index >= start_dt) & (price_df.index <= end_dt)]
+
+    # Check if we have at least 1 day of data in the period
+    if period_df.empty:
+        # Fallback: check if the item existed at all before the start date.
+        if price_df.index.max() < start_dt:
+             return None # Item did not exist/was not tracked yet
+
+    # Calculate the mean of the avgHighPrice over the period
+    # If using API data, we are averaging the available daily high prices.
+    avg_price = period_df['avgHighPrice'].mean()
+
+    return avg_price
+
 def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dict):
     """
-    Calculates inflation for a single item over a period.
+    Calculates inflation for a single item over a period (point-to-point).
 
     Returns a dictionary with results or an error message.
     """
-
     # 1. Find the item ID from the pre-processed mapping dictionary
     item_info = mapping_dict.get(item_name.lower())
 
@@ -31,12 +58,10 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
     price_df = get_price_history(item_id)
 
     if price_df is None or price_df.empty:
-        # --- THIS ERROR MESSAGE IS NOW CORRECT ---
         return {'error': f"No price data found for '{item_name}'. (The Wiki API may not list this item, or the request was blocked. Check User-Agent in config.py)"}
 
     try:
-        # 3. Find the prices for the start and end dates
-        # Use .asof() to find the closest price AT or BEFORE the target date
+        # 3. Find the prices for the start and end dates (Point-in-time calculation using .asof())
         old_price_data = price_df.asof(pd.to_datetime(start_date))
         new_price_data = price_df.asof(pd.to_datetime(end_date))
 
@@ -44,7 +69,6 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
         if old_price_data is None or pd.isna(old_price_data['avgHighPrice']):
             return {'error': f"No price data found for '{item_name}' on or before {start_date}. (Item may not have existed)"}
 
-        # FIX: Changed new_row_price_data to new_price_data
         if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
             return {'error': f"No price data found for '{item_name}' on or before {end_date}."}
 
@@ -79,7 +103,7 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
 def calculate_monthly_rpi_dataframe(basket, mapping_dict):
     """
     Generates a DataFrame of monthly YoY RPI figures spanning the entire available history.
-    It stops when the RPI cannot be calculated for the whole basket anymore, or before 2014.
+    Each point represents the YoY inflation of the *average price* across that full month.
     """
 
     today = datetime.now().date()
@@ -92,24 +116,26 @@ def calculate_monthly_rpi_dataframe(basket, mapping_dict):
     max_months = 240
 
     for _ in range(max_months):
-        # 1. Define the end date (1st of the current month)
-        end_date = current_date
+        # Determine the full month period for the current calculation (e.g., October 1 to October 31)
+        # The end date is the last day of the month before the current 'current_date' (which is the 1st of a month)
+        end_of_month = current_date - timedelta(days=1)
+        start_of_month = date(end_of_month.year, end_of_month.month, 1)
+
+        # We need the YoY comparison period as well (the same month, one year prior)
+        start_of_year_ago = start_of_month.replace(year=start_of_month.year - 1)
+        end_of_year_ago = end_of_month.replace(year=end_of_month.year - 1)
 
         # --- FIX: Stop iterating when the start date would be 2014 or earlier. ---
-        # We stop when the target end date (current_date) is 2014.
-        if current_date.year <= 2014:
+        if start_of_year_ago.year <= 2014:
             break
 
-        # 2. Define the start date (1st of the same month, one year prior)
-        # Use .replace() for a cleaner, safer year calculation that keeps the day=1.
-        start_date = current_date.replace(year=current_date.year - 1)
-
-
-        # Calculate RPI for this specific month
-        rpi_value, excluded = calculate_rpi(
+        # Calculate RPI for this specific month using the full period average
+        rpi_value, excluded = calculate_rpi_period_average(
             basket,
-            start_date,
-            end_date,
+            start_of_year_ago,
+            end_of_year_ago,
+            start_of_month,
+            end_of_month,
             mapping_dict,
             show_progress=False # Always suppress progress bar for history calculation
         )
@@ -119,7 +145,8 @@ def calculate_monthly_rpi_dataframe(basket, mapping_dict):
             break
 
         rpi_data.append({
-            'date': end_date,
+            # Anchor the historical point to the last day of the month for plotting consistency
+            'date': end_of_month,
             'rpi': rpi_value
         })
 
@@ -136,10 +163,9 @@ def calculate_monthly_rpi_dataframe(basket, mapping_dict):
         df = df.rename(columns={'rpi': 'YoY RPI (%)'})
     return df
 
-
 def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True):
     """
-    Calculates the weighted RPI for a basket of goods, handling missing items.
+    Calculates the weighted RPI for a basket of goods using POINT-IN-TIME prices.
     'show_progress' controls whether a Streamlit progress bar is displayed.
     """
 
@@ -147,49 +173,47 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
     excluded_items = []
     total_valid_weight = 0.0
 
+    # We will use this to call the new average calculation, passing two identical date ranges
+    # effectively making it a point-in-time calculation if we want to reuse the logic.
+    # However, since we need distinct point-in-time logic, we stick to the original logic
+    # but rename the function for clarity.
+
     if show_progress:
         progress_bar = st.progress(0, text="Initializing RPI calculation...")
     else:
-        # Use a dummy object if no progress bar is requested
         class DummyProgress:
             def progress(self, *args, **kwargs): pass
             def empty(self): pass
         progress_bar = DummyProgress()
 
     for i, (item_name, original_weight) in enumerate(basket.items()):
-
-        # Calculate progress step
         if show_progress:
             progress_text = f"Calculating for '{item_name.lower()}' ({i+1}/{len(basket)})..."
             progress_bar.progress((i+1) / len(basket), text=progress_text)
 
-        # 1. Find the item ID
         item_info = mapping_dict.get(item_name.lower())
-
         if not item_info:
             excluded_items.append(f"{item_name} (ID not found)")
             continue
 
-        # 2. Get price history
         item_id = item_info['id']
         price_df = get_price_history(item_id)
 
         if price_df is None or price_df.empty:
-            # --- THIS ERROR MESSAGE IS NOW CORRECT ---
             excluded_items.append(f"{item_name} (No price data from Wiki API)")
             continue
 
-        # 3. Find prices at target dates
+        # --- Use .asof() for point-in-time price (the original logic) ---
         old_price_data = price_df.asof(pd.to_datetime(start_date))
         new_price_data = price_df.asof(pd.to_datetime(end_date))
 
         # 4. Check if data exists for those dates
         if old_price_data is None or pd.isna(old_price_data['avgHighPrice']):
-            excluded_items.append(f"{item_name} (Did not exist at start date)")
+            excluded_items.append(f"{item_name} (Did not exist at start date: {start_date})")
             continue
 
         if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
-            excluded_items.append(f"{item_name} (No data at end date)")
+            excluded_items.append(f"{item_name} (No data at end date: {end_date})")
             continue
 
         # 5. Data is valid! Calculate item-specific inflation
@@ -205,20 +229,86 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
         })
         total_valid_weight += original_weight
 
-    # Clear progress bar only if it was shown
     if show_progress:
         progress_bar.empty()
 
-    # --- Final RPI Calculation (Re-weighting) ---
-
     if total_valid_weight == 0:
-        # All items failed, return the exclusion list
         return None, excluded_items
 
-    # Calculate the final weighted average
+    # --- Final RPI Calculation (Re-weighting) ---
     final_rpi = 0.0
     for item in valid_results:
-        # Re-calculate weight based on only the valid items
+        new_weight = item['original_weight'] / total_valid_weight
+        weighted_contribution = item['inflation'] * new_weight
+        final_rpi += weighted_contribution
+
+    return final_rpi, excluded_items
+
+
+def calculate_rpi_period_average(basket, start_old, end_old, start_new, end_new, mapping_dict, show_progress=True):
+    """
+    Calculates the weighted RPI for a basket of goods using the AVERAGE PRICE over two distinct periods.
+    This is used for monthly RPI history.
+    """
+
+    valid_results = []
+    excluded_items = []
+    total_valid_weight = 0.0
+
+    if show_progress:
+        progress_bar = st.progress(0, text="Initializing Averaged RPI calculation...")
+    else:
+        class DummyProgress:
+            def progress(self, *args, **kwargs): pass
+            def empty(self): pass
+        progress_bar = DummyProgress()
+
+    for i, (item_name, original_weight) in enumerate(basket.items()):
+        if show_progress:
+            progress_text = f"Calculating average for '{item_name.lower()}' ({i+1}/{len(basket)})..."
+            progress_bar.progress((i+1) / len(basket), text=progress_text)
+
+        item_info = mapping_dict.get(item_name.lower())
+        if not item_info:
+            excluded_items.append(f"{item_name} (ID not found)")
+            continue
+
+        item_id = item_info['id']
+
+        # 1. Get average price for the OLD period (one year ago)
+        old_price = get_average_price_for_period(item_id, start_old, end_old)
+
+        # 2. Get average price for the NEW period (the current month)
+        new_price = get_average_price_for_period(item_id, start_new, end_new)
+
+        # 3. Check for valid data
+        if old_price is None or pd.isna(old_price) or old_price == 0:
+            excluded_items.append(f"{item_name} (No average price data for old period: {start_old} to {end_old})")
+            continue
+
+        if new_price is None or pd.isna(new_price) or new_price == 0:
+            excluded_items.append(f"{item_name} (No average price data for new period: {start_new} to {end_new})")
+            continue
+
+        # 4. Data is valid! Calculate item-specific inflation
+        item_inflation = calculate_inflation_percent(old_price, new_price)
+
+        valid_results.append({
+            'name': item_name,
+            'inflation': item_inflation,
+            'original_weight': original_weight
+        })
+        total_valid_weight += original_weight
+
+    if show_progress:
+        progress_bar.empty()
+
+    if total_valid_weight == 0:
+        return None, excluded_items
+
+    # --- Final RPI Calculation (Re-weighting) ---
+    final_rpi = 0.0
+    for item in valid_results:
         new_weight = item['original_weight'] / total_valid_weight
         weighted_contribution = item['inflation'] * new_weight
         final_rpi += weighted_contribution
