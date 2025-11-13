@@ -3,7 +3,7 @@
 # A descriptive User-Agent with a contact is required by the OSRS Wiki APIs
 # to prevent blocking.
 HEADERS = {
-    'User-Agent': 'OSRS Inflation Calculator - (github.com/spenny12/osrs-calc)'
+    'User-Agent': 'OSRS Inflation Calculator - Discord: spenny12_'
 }
 
 # --- Default RPI Basket ---
