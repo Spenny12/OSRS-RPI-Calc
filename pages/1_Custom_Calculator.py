@@ -152,42 +152,53 @@ elif calc_mode == "Custom RPI Basket":
         st.info("Assign a 'weight' to each item. A weight of 2 is twice as important as 1. The app will normalize these automatically.")
         
         total_weight = 0
-        cols = st.columns(len(st.session_state.custom_basket_items))
-        
-        for i, item_name in enumerate(st.session_state.custom_basket_items):
-            with cols[i]:
-                # Use item name in key to ensure widget is unique
-                weight = st.number_input(f"{item_name}", min_value=1, value=1, key=f"weight_{item_name}")
-                final_basket[item_name] = weight
-                total_weight += weight
-        
+        # Dynamically create columns for weights
+        num_items = len(st.session_state.custom_basket_items)
+        # Handle case where many items are selected by chunking
+        max_cols = 5
+        for i in range(0, num_items, max_cols):
+            cols = st.columns(min(num_items - i, max_cols))
+            chunk_items = st.session_state.custom_basket_items[i:i + max_cols]
+
+            for j, item_name in enumerate(chunk_items):
+                with cols[j]:
+                    # Use item name in key to ensure widget is unique
+                    weight = st.number_input(f"{item_name}", min_value=1, value=1, key=f"weight_{item_name}")
+                    final_basket[item_name] = weight
+                    total_weight += weight
+
         # Normalize weights for the calculator
         if total_weight > 0:
             normalized_basket = {item: (weight / total_weight) for item, weight in final_basket.items()}
-            
+
             st.markdown("---")
             run_rpi_calc = st.button("Calculate RPI", type="primary", use_container_width=True, key="run_rpi")
-            
+
             if run_rpi_calc:
                 if start_date >= end_date:
                     st.error("Start date must be before the end date.")
                 else:
                     with st.spinner("Calculating custom RPI..."):
                         rpi_value, excluded = calculate_rpi(normalized_basket, start_date, end_date, mapping)
-                    
+
                     st.markdown("---")
                     st.subheader("Custom RPI Result")
-                    
+
                     if rpi_value is not None:
                         st.metric(
                             label=f"Weighted Inflation ({start_date} to {end_date})",
                             value=f"{rpi_value:.2f}%"
                         )
-                        
+
                         with st.expander("See your basket composition (normalized)"):
                             st.json({k: f"{v*100:.2f}% weight" for k, v in normalized_basket.items()})
 
                         if excluded:
                             st.warning(f"Some items were excluded from this calculation: {', '.join(excluded)}")
                     else:
-                        st.error("Could not calculate RPI. No valid data was found for any item in your basket for this period.")
+                        # THIS IS THE UPDATED ERROR BLOCK
+                        st.error("Could not calculate RPI. No valid data was found for any item in your basket for this period.", icon="🚨")
+                        if excluded:
+                            st.subheader("Reasons for failure:")
+                            st.warning(f"All items in your basket failed. Here are the reasons:\n\n* " + "\n* ".join(excluded))
+                        st.info("This. often happens if the API is temporarily down or if the selected date range is before any of the items existed.")

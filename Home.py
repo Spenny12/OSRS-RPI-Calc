@@ -64,7 +64,12 @@ try:
             if excluded:
                 st.warning(f"Some items were excluded from this calculation (e.g., did not exist): {', '.join(excluded)}")
         else:
-            st.error("Could not calculate the RPI. No valid data was found for any item in the basket for this period.")
+            # THIS IS THE UPDATED ERROR BLOCK
+            st.error("Could not calculate the RPI. No valid data was found for any item in the basket for this period.", icon="🚨")
+            if excluded:
+                st.subheader("Reasons for failure:")
+                st.warning(f"All items in the basket failed. Here are the reasons:\n\n* " + "\n* ".join(excluded))
+            st.info("This often happens if the API is temporarily down or if the selected date range is before any of the items existed.")
 
 except Exception as e:
     st.error(f"An unexpected error occurred: {e}", icon="🔥")
