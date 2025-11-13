@@ -34,7 +34,8 @@ with col1:
 
     st.subheader("2. Select Timeframe")
     today = datetime.now().date()
-    start_date = st.date_input("Start Date", value=today - timedelta(days=365))
+    # --- Default is 90 days for API reliability ---
+    start_date = st.date_input("Start Date", value=today - timedelta(days=90))
     end_date = st.date_input("End Date", value=today)
 
     # --- Mode-Specific UI ---
