@@ -1,91 +1,107 @@
+import streamlit as st
 import requests
 import pandas as pd
-import streamlit as st
-from config import HEADERS # Import HEADERS from config
+from datetime import datetime
+from config import HEADERS
 
-# --- Item ID Mapping ---
-@st.cache_resource(ttl="6h")
+@st.cache_data(ttl="6h")
 def get_item_mapping():
     """
-    Fetches the OSRS Wiki ID/name mapping.
-
-    Returns:
-        tuple: (mapping_dict, item_names_list)
-        - mapping_dict: {'shark': {'id': 385, 'name': 'Shark'}, ...}
-        - item_names_list: ['shark', 'twisted bow', ...]
+    Fetches the complete item ID-to-name mapping from the OSRS Wiki API.
+    Processes the data into a fast lookup dictionary and a sorted list of names.
     """
-    WIKI_MAPPING_URL = "https://prices.runescape.wiki/api/v1/osrs/mapping"
     try:
-        response = requests.get(WIKI_MAPPING_URL, headers=HEADERS)
+        response = requests.get(
+            "https://prices.runescape.wiki/api/v1/osrs/mapping",
+            headers=HEADERS
+        )
         response.raise_for_status()
-        data = response.json()
+        mapping_data = response.json()
 
+        # --- NEW: Process into a high-speed dictionary ---
+        # Key: item name (lowercase)
+        # Value: {'id': 123, 'name': "Item Name"}
         mapping_dict = {}
         item_names_list = []
 
-        for item in data:
-            # Ensure item has a name, id, and is tradeable (examine text)
-            if 'name' in item and 'id' in item and 'examine' in item:
-                lowered_name = item['name'].lower()
-                mapping_dict[lowered_name] = item
-                item_names_list.append(lowered_name)
+        for item in mapping_data:
+            # Ensure the item has a name and isn't a placeholder
+            if 'name' in item and 'id' in item and not item['name'].startswith("Exchange ticket"):
+                item_name_lower = item['name'].lower()
+                mapping_dict[item_name_lower] = {
+                    'id': item['id'],
+                    'name': item['name'] # Store the original case-sensitive name
+                }
+                item_names_list.append(item_name_lower)
 
-        return mapping_dict, sorted(item_names_list)
+        # Sort the list for the UI
+        item_names_list.sort()
+
+        return mapping_dict, item_names_list
 
     except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching OSRS item mapping: {e}")
+        st.error(f"Error fetching item mapping: {e}")
         return None, None
 
-# --- Price History (Jagex API) ---
-@st.cache_data(ttl="1h")
+@st.cache_data(ttl="10m")
 def get_price_history(item_id):
     """
-    Fetches the full, un-rounded price history for an item from the Jagex API.
+    Fetches the full historical graph data from the Jagex API for a specific item ID.
+    This provides un-rounded, daily data for the item's entire history.
     """
-    JAGEX_GRAPH_URL = f"https://services.runescape.com/m=itemdb_oldschool/api/graph/{item_id}.json"
-
     try:
-        response = requests.get(JAGEX_GRAPH_URL, headers=HEADERS)
+        # --- NEW: Using the Jagex API for full history ---
+        url = f"https://services.runescape.com/m=itemdb_oldschool/api/graph/{item_id}.json"
+
+        response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         data = response.json()
 
-        # The data is in a dictionary {'timestamp': price}
-        # We need to convert it to a DataFrame
-        price_history = data.get('daily', {})
+        # The 'daily' key holds a dictionary of: {timestamp: price}
+        price_history = data.get('daily')
+
         if not price_history:
-            return None # Item may be new or not tracked
+            # This can happen for items Jagex doesn't list
+            return None
 
-        df = pd.DataFrame(list(price_history.items()), columns=['timestamp', 'avgHighPrice'])
+        # --- Convert dictionary to a DataFrame ---
+        df = pd.DataFrame(
+            list(price_history.items()),
+            columns=['timestamp', 'avgHighPrice']
+        )
 
-        # --- FIX 1: Ensure avgHighPrice is numeric ---
-        # Coerce any errors (like 'N/A') to NaN, which .ffill() will handle
-        df['avgHighPrice'] = pd.to_numeric(df['avgHighPrice'], errors='coerce')
+        # --- CRITICAL FIXES ---
 
-        # Convert timestamps (which are in milliseconds) to datetime objects
-        df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
+        # 1. Convert timestamp (which is a string) to numeric, then to datetime
+        #    This is the safest way to handle the API's string timestamps.
+        df['date'] = pd.to_datetime(pd.to_numeric(df['timestamp']), unit='ms')
         df = df.set_index('date')
 
-        # --- FIX 2: Drop the non-numeric timestamp column ---
-        # This column is no longer needed and will break .resample().mean()
+        # 2. Drop the now-useless timestamp column BEFORE resampling
         df = df.drop(columns=['timestamp'])
 
-        # --- THIS IS THE CRITICAL FIX ---
-        # The dictionary is unsorted, so the DataFrame index is jumbled.
-        # We MUST sort by date before we can use .asof() or resample.
+        # 3. Ensure price is numeric, coercing errors
+        df['avgHighPrice'] = pd.to_numeric(df['avgHighPrice'], errors='coerce')
+
+        # 4. CRITICAL: Sort the index. asof() requires a sorted index.
         df = df.sort_index()
 
-        # Resample to daily (D) and forward-fill missing days (weekends, etc.)
-        # This will now ONLY resample the 'avgHighPrice' column
+        # 5. Resample to a full daily index ('D') and get the mean.
+        #    This creates a clean, gap-less daily timeline.
         df_daily = df.resample('D').mean()
-        df_daily['avgHighPrice'] = df_daily['avgHighPrice'].ffill()
 
-        # Create 'avgLowPrice' as a placeholder since this API doesn't provide it
-        # Our calculator only uses 'avgHighPrice' anyway
-        df_daily['avgLowPrice'] = df_daily['avgHighPrice']
+        # 6. Fill all gaps.
+        #    ffill() fills gaps after the item's release.
+        #    bfill() fills gaps at the *start* of the data (e.g., if Jagex
+        #    has data starting from 2014, this fills backward to the
+        #    beginning of pandas' default time, which is fine for .asof())
+        df_daily['avgHighPrice'] = df_daily['avgHighPrice'].ffill().bfill()
 
         return df_daily
 
-    except requests.exceptions.RequestException as e:
-        # Handle cases where the item doesn't exist on the graph API (e.g., item ID 1)
-        st.warning(f"Could not fetch price graph for item ID {item_id}: {e}")
+    except requests.exceptions.RequestException:
+        # This will catch 404s (for items Jagex doesn't track) or other errors
+        return None
+    except Exception:
+        # Catch other errors, like JSON parsing
         return None
