@@ -96,7 +96,7 @@ with col1:
 
     elif mode == "Custom RPI Basket":
         st.subheader("3. Build Custom Basket")
-        st.markdown("Add items and their weight. All weights will be normalized (e.g., 2 and 3 become 40% and 60%).")
+        st.markdown("Add items and their weight. All weights will be normalised (e.g., 2 and 3 become 40% and 60%).")
 
         if 'custom_basket' not in st.session_state:
             st.session_state.custom_basket = {}

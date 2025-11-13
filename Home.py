@@ -9,7 +9,7 @@ st.set_page_config(page_title="OSRS Inflation Calculator", page_icon="📈", lay
 st.title("OSRS Inflation Calculator")
 
 st.markdown("""
-Welcome! This tool calculates the inflation rate for items in Old School Runescape.
+Hi Kier
 
 The "OSRS RPI" displayed below compares weighted inflation rates over different periods
 based on a default basket of popular items.
