@@ -122,8 +122,16 @@ def calculate_monthly_rpi_dataframe(basket, mapping_dict):
         start_of_month = date(end_of_month.year, end_of_month.month, 1)
 
         # We need the YoY comparison period as well (the same month, one year prior)
-        start_of_year_ago = start_of_month.replace(year=start_of_month.year - 1)
-        end_of_year_ago = end_of_month.replace(year=end_of_month.year - 1)
+
+        # --- FIX: Added try/except to handle ValueError when replacing Feb 29th in a non-leap year ---
+        try:
+            start_of_year_ago = start_of_month.replace(year=start_of_month.year - 1)
+            end_of_year_ago = end_of_month.replace(year=end_of_month.year - 1)
+        except ValueError:
+            # This happens if end_of_month is Feb 29th and the target year is not a leap year.
+            # We safely default to Feb 28th for the historical end date in this case.
+            start_of_year_ago = start_of_month.replace(year=start_of_month.year - 1)
+            end_of_year_ago = date(end_of_month.year - 1, end_of_month.month, 28)
 
         # --- FIX: Stop iterating when the start date would be 2014 or earlier. ---
         if start_of_year_ago.year <= 2014:
