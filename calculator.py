@@ -16,41 +16,51 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
     """
     Calculates inflation for a single item over a period.
 
-    Returns a dictionary with results or an error message.
+    Returns a dictionary with results, an error message, and new debug info.
     """
 
-    # 1. Find the item ID from the pre-processed mapping dictionary
+    # 1. Find the item ID
     item_info = mapping_dict.get(item_name.lower())
+    debug_info = {} # Initialize debug info
 
     if not item_info:
-        return {'error': f"ID not found for '{item_name}'. (Item name may be incorrect)"}
+        return {
+            'error': f"ID not found for '{item_name}'. (Item name may be incorrect)",
+            'debug_info': {'error': 'Item not found in local mapping dictionary.'}
+        }
 
-    # 2. Get the full price history from the Jagex API
+    # 2. Get the full price history AND debug info
     item_id = item_info['id']
-    price_df = get_price_history(item_id)
+    price_df, debug_info = get_price_history(item_id)
 
     if price_df is None or price_df.empty:
-        # --- THIS ERROR MESSAGE IS NOW CORRECT ---
-        return {'error': f"No price data found for '{item_name}'. (The Wiki API may not list this item, or the request was blocked. Check User-Agent in config.py)"}
+        # The API call failed, return the error and the debug info
+        return {
+            'error': f"No price data found for '{item_name}'. Check debug info below for API response.",
+            'debug_info': debug_info
+        }
 
     try:
         # 3. Find the prices for the start and end dates
-        # Use .asof() to find the closest price AT or BEFORE the target date
         old_price_data = price_df.asof(pd.to_datetime(start_date))
         new_price_data = price_df.asof(pd.to_datetime(end_date))
 
         # 4. Error checking for dates
         if old_price_data is None or pd.isna(old_price_data['avgHighPrice']):
-            return {'error': f"No price data found for '{item_name}' on or before {start_date}. (Item may not have existed)"}
+            return {
+                'error': f"No price data found for '{item_name}' on or before {start_date}. (Item may not have existed)",
+                'debug_info': debug_info
+            }
 
         if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
-            return {'error': f"No price data found for '{item_name}' on or before {end_date}."}
+            return {
+                'error': f"No price data found for '{item_name}' on or before {end_date}.",
+                'debug_info': debug_info
+            }
 
         # 5. We have valid data, extract it
         old_price = old_price_data['avgHighPrice']
         new_price = new_price_data['avgHighPrice']
-
-        # Get the actual dates from the dataframe index
         actual_start_date = old_price_data.name.date()
         actual_end_date = new_price_data.name.date()
 
@@ -66,11 +76,16 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
             'new_price': new_price,
             'actual_start_date': actual_start_date,
             'actual_end_date': actual_end_date,
-            'price_df': price_df
+            'price_df': price_df,
+            'debug_info': debug_info # Pass the debug info
         }
 
     except Exception as e:
-        return {'error': f"An unexpected error occurred during calculation: {e}"}
+        debug_info['error'] = f"Pandas .asof() Error: {e}"
+        return {
+            'error': f"An unexpected error occurred during calculation: {e}",
+            'debug_info': debug_info
+        }
 
 
 def calculate_rpi(basket, start_date, end_date, mapping_dict):
@@ -95,13 +110,14 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict):
             excluded_items.append(f"{item_name} (ID not found)")
             continue
 
-        # 2. Get price history
+        # 2. Get price history (and ignore debug info for RPI)
         item_id = item_info['id']
-        price_df = get_price_history(item_id)
+        price_df, debug_info = get_price_history(item_id) # Caching is off, this will be slow
 
         if price_df is None or price_df.empty:
-            # --- THIS ERROR MESSAGE IS NOW CORRECT ---
-            excluded_items.append(f"{item_name} (No price data from Wiki API)")
+            # Pass up the API error from debug info
+            api_error = debug_info.get('error', 'No data')
+            excluded_items.append(f"{item_name} (API Error: {api_error})")
             continue
 
         # 3. Find prices at target dates
@@ -135,13 +151,10 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict):
     # --- Final RPI Calculation (Re-weighting) ---
 
     if total_valid_weight == 0:
-        # All items failed, return the exclusion list
         return None, excluded_items
 
-    # Calculate the final weighted average
     final_rpi = 0.0
     for item in valid_results:
-        # Re-calculate weight based on only the valid items
         new_weight = item['original_weight'] / total_valid_weight
         weighted_contribution = item['inflation'] * new_weight
         final_rpi += weighted_contribution

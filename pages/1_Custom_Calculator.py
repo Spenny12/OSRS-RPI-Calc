@@ -8,8 +8,8 @@ st.set_page_config(page_title="Custom Calculator", page_icon="🎛️", layout="
 st.title("🎛️ Custom Inflation Calculator")
 
 # --- Load Mapping Data ---
-# This is loaded once and cached, so it's fast
-@st.cache_resource
+# CRITICAL: Caching is DISABLED for debugging
+# @st.cache_resource
 def load_mapping_data():
     return get_item_mapping()
 
@@ -34,17 +34,21 @@ with col1:
 
     st.subheader("2. Select Timeframe")
     today = datetime.now().date()
-    # --- NEW: Changed default back to 365 days ---
     start_date = st.date_input("Start Date", value=today - timedelta(days=365))
     end_date = st.date_input("End Date", value=today)
 
     # --- Mode-Specific UI ---
     if mode == "Single Item":
         st.subheader("3. Select Item")
+        # Ensure 'shark' is a valid key, otherwise default to first item
+        default_index = 0
+        if "Shark" in item_names_list:
+            default_index = item_names_list.index("Shark")
+
         item_name = st.selectbox(
             "Item Name:",
             options=item_names_list,
-            index=item_names_list.index("shark") # Default to 'shark'
+            index=default_index
         )
 
         if st.button("Calculate Single Item Inflation", type="primary", use_container_width=True):
@@ -80,10 +84,33 @@ with col1:
 
                             st.subheader("Price History Chart")
                             chart_df = result['price_df']
-                            # Filter dataframe to the selected range for a cleaner chart
                             chart_df = chart_df[chart_df.index >= pd.to_datetime(start_date)]
                             chart_df = chart_df[chart_df.index <= pd.to_datetime(end_date)]
                             st.line_chart(chart_df['avgHighPrice'])
+
+                        # --- NEW: DEBUGGER UI ---
+                        st.markdown("---")
+                        with st.expander("Show Debug Information (Click to open)"):
+                            debug_data = result.get('debug_info', {})
+
+                            st.text_input("Queried URL (cURL):", value=debug_data.get('url', 'N/A'), disabled=True)
+
+                            status_code = debug_data.get('status_code')
+                            st.metric("API Status Code:", value=str(status_code) if status_code else "N/A")
+
+                            response_text = debug_data.get('response_text', '')
+
+                            st.download_button(
+                                label="Download API Response",
+                                data=response_text,
+                                file_name=f"api_response_{item_name}.json" if (response_text and response_text.strip().startswith('{')) else f"api_response_{item_name}.txt",
+                                mime="application/json" if (response_text and response_text.strip().startswith('{')) else "text/plain"
+                            )
+
+                            st.text_area("Raw API Response:", value=response_text or "No response text captured.", height=300)
+
+                            if debug_data.get('error'):
+                                st.error(f"Processing Error: {debug_data['error']}")
 
     elif mode == "Custom RPI Basket":
         st.subheader("3. Build Custom Basket")
@@ -94,11 +121,17 @@ with col1:
 
         # --- UI for adding items to the basket ---
         form_col1, form_col2, form_col3 = st.columns([3, 1, 1])
+
+        # Ensure 'Shark' is a valid key, otherwise default to first item
+        default_index = 0
+        if "Shark" in item_names_list:
+            default_index = item_names_list.index("Shark")
+
         with form_col1:
             new_item_name = st.selectbox(
                 "Item Name:",
                 options=item_names_list,
-                index=item_names_list.index("shark"),
+                index=default_index,
                 key="basket_item_name"
             )
         with form_col2:
