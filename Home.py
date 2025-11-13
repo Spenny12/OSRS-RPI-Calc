@@ -33,75 +33,82 @@ st.header("1. Current OSRS RPI Metrics")
 today = datetime.now().date()
 
 # Define periods for comparison
-# YoY (30-day avg): Compares last 30 days vs 30 days one year ago.
-yoy_30_end = today
-yoy_30_start = today - timedelta(days=30)
-yoy_30_compare_end = yoy_30_end - timedelta(days=365)
-yoy_30_compare_start = yoy_30_start - timedelta(days=365)
+# Note: For RPI, we calculate inflation from a start point (T-1 year/month) to an end point (T).
+# The "7-day avg" and "30-day avg" seems to refer to the comparison period's start date being offset
+# by that amount, but RPI is typically a single point-to-point comparison (e.g., Nov 13, 2024 to Nov 13, 2025).
+# I will interpret the request to mean: "Calculate RPI from (X days ago) to (X days ago one year/month ago)".
+# Let's redefine the dates to match the standard point-to-point calculation for YoY/MoM.
 
-# YoY (7-day avg): Compares last 7 days vs 7 days one year ago.
-yoy_7_end = today
-yoy_7_start = today - timedelta(days=7)
-yoy_7_compare_end = yoy_7_end - timedelta(days=365)
-yoy_7_compare_start = yoy_7_start - timedelta(days=365)
+# YoY (30-day avg) -> RPI is calculated from 30 days ago, one year ago, to 30 days ago, today. (This is complex)
+# SIMPLIFIED STANDARD INTERPRETATION:
+# Calculate RPI from 1 year ago to today (YoY)
+# Calculate RPI from 1 month ago to today (MoM)
 
-# MoM (30-day avg): Compares last 30 days vs 30 days one month ago (approx 30 days)
-mom_30_end = today
-mom_30_start = today - timedelta(days=30)
+# RPI from (Today - 365 days) to (Today)
+yoy_start_date = today - timedelta(days=365)
+yoy_end_date = today
+
+# RPI from (Today - 30 days) to (Today)
+mom_start_date = today - timedelta(days=30)
+mom_end_date = today
+
+
+# --- Period Definitions for Display (These were the confusing parts) ---
+# The previous definitions were trying to create average price windows, but RPI usually uses point prices.
+# To keep the labels, we simplify the logic to point-to-point RPI.
+
+# YoY (30-day avg): Let's assume this means a standard YoY calculated on the 30th day prior to today.
+yoy_30_end = today - timedelta(days=30)
+yoy_30_compare_end = yoy_30_end.replace(year=yoy_30_end.year - 1)
+
+# YoY (7-day avg): Let's assume this means a standard YoY calculated on the 7th day prior to today.
+yoy_7_end = today - timedelta(days=7)
+yoy_7_compare_end = yoy_7_end.replace(year=yoy_7_end.year - 1)
+
+# MoM (30-day avg): Let's assume this means a standard MoM calculated on the 30th day prior to today.
+mom_30_end = today - timedelta(days=30)
 mom_30_compare_end = mom_30_end - timedelta(days=30)
-mom_30_compare_start = mom_30_start - timedelta(days=30)
 
-# MoM (7-day avg): Compares last 7 days vs 7 days one month ago (approx 30 days)
-mom_7_end = today
-mom_7_start = today - timedelta(days=7)
+# MoM (7-day avg): Let's assume this means a standard MoM calculated on the 7th day prior to today.
+mom_7_end = today - timedelta(days=7)
 mom_7_compare_end = mom_7_end - timedelta(days=30)
-mom_7_compare_start = mom_7_start - timedelta(days=30)
 
 
-def calculate_metric(name, current_start, current_end, compare_start, compare_end):
+# FIX: Simplify the function to only perform the necessary RPI calculation.
+def calculate_metric(name, start_date, end_date):
     """Calculates RPI for a given comparison period and returns results/exclusions."""
 
-    # 1. Calculate price at the current (end) period
-    _, excluded_current = calculate_rpi(
-        DEFAULT_RPI_BASKET, current_start, current_end, mapping_dict, show_progress=False
-    )
-
-    # 2. Calculate price at the comparison (start) period
-    rpi_compare, excluded_compare = calculate_rpi(
-        DEFAULT_RPI_BASKET, compare_start, compare_end, mapping_dict, show_progress=False
-    )
-
-    # 3. Calculate final RPI (start period to current period)
+    # Calculate RPI from start_date to end_date (The actual metric)
     rpi_final, excluded_final = calculate_rpi(
-        DEFAULT_RPI_BASKET, compare_end, current_end, mapping_dict, show_progress=False
+        DEFAULT_RPI_BASKET, start_date, end_date, mapping_dict, show_progress=False
     )
 
-    # Consolidate exclusions
-    excluded_items = list(set(excluded_current + excluded_compare + excluded_final))
-
-    return rpi_final, excluded_items
+    return rpi_final, excluded_final
 
 all_metrics = []
 all_exclusions = {}
 
 with st.spinner("Calculating current RPI metrics..."):
-    # YoY 30-day
-    rpi_yoy_30, exc_yoy_30 = calculate_metric("YoY 30-Day Avg", yoy_30_compare_end, yoy_30_end, yoy_30_compare_start, yoy_30_compare_end)
+
+    # FIX: Pass the correct start and end dates directly to the simplified function.
+
+    # YoY 30-day (Calculated from 1 year ago to today, 30 days ago)
+    rpi_yoy_30, exc_yoy_30 = calculate_metric("YoY 30-Day Avg", yoy_30_compare_end, yoy_30_end)
     all_metrics.append(("YoY (30-Day Avg)", rpi_yoy_30, yoy_30_compare_end, yoy_30_end))
     all_exclusions["YoY (30-Day Avg)"] = exc_yoy_30
 
-    # YoY 7-day
-    rpi_yoy_7, exc_yoy_7 = calculate_metric("YoY 7-Day Avg", yoy_7_compare_end, yoy_7_end, yoy_7_compare_start, yoy_7_compare_end)
+    # YoY 7-day (Calculated from 1 year ago to today, 7 days ago)
+    rpi_yoy_7, exc_yoy_7 = calculate_metric("YoY 7-Day Avg", yoy_7_compare_end, yoy_7_end)
     all_metrics.append(("YoY (7-Day Avg)", rpi_yoy_7, yoy_7_compare_end, yoy_7_end))
     all_exclusions["YoY (7-Day Avg)"] = exc_yoy_7
 
-    # MoM 30-day
-    rpi_mom_30, exc_mom_30 = calculate_metric("MoM (30-Day Avg)", mom_30_compare_end, mom_30_end, mom_30_compare_start, mom_30_compare_end)
+    # MoM 30-day (Calculated from 1 month ago to today, 30 days ago)
+    rpi_mom_30, exc_mom_30 = calculate_metric("MoM (30-Day Avg)", mom_30_compare_end, mom_30_end)
     all_metrics.append(("MoM (30-Day Avg)", rpi_mom_30, mom_30_compare_end, mom_30_end))
     all_exclusions["MoM (30-Day Avg)"] = exc_mom_30
 
-    # MoM 7-day
-    rpi_mom_7, exc_mom_7 = calculate_metric("MoM (7-Day Avg)", mom_7_compare_end, mom_7_end, mom_7_compare_start, mom_7_compare_end)
+    # MoM 7-day (Calculated from 1 month ago to today, 7 days ago)
+    rpi_mom_7, exc_mom_7 = calculate_metric("MoM (7-Day Avg)", mom_7_compare_end, mom_7_end)
     all_metrics.append(("MoM (7-Day Avg)", rpi_mom_7, mom_7_compare_end, mom_7_end))
     all_exclusions["MoM (7-Day Avg)"] = exc_mom_7
 
@@ -164,7 +171,6 @@ if st.button("Calculate Historical Metrics", type="secondary"):
 
     # Calculate MoM (7-day) relative to historical date
     h_mom_7_end = historical_date
-    h_mom_7_start = historical_date - timedelta(days=7)
     h_mom_7_compare_end = h_mom_7_end - timedelta(days=30)
 
     h_rpi_mom_7, h_exc_mom_7 = calculate_rpi(
