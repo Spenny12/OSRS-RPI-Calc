@@ -58,7 +58,8 @@ def get_price_history(item_id):
         data = response.json()
 
         # The 'daily' key holds a dictionary of: {timestamp: price}
-        price_history = data.get('daily')
+        # --- THE FIX: Switch from 'daily' to 'average' ---
+        price_history = data.get('average')
 
         if not price_history:
             # This can happen for items Jagex doesn't list
