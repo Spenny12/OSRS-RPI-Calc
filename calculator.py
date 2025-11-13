@@ -86,6 +86,7 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
 
     progress_bar = None
     if show_progress:
+        # Start a progress bar only if explicitly requested
         progress_bar = st.progress(0, text="Initializing RPI calculation...")
 
     for i, (item_name, original_weight) in enumerate(basket.items()):
@@ -118,7 +119,6 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
             excluded_items.append(f"{item_name} (Did not exist at start date)")
             continue
 
-        # FIX: The NameError was fixed here in the previous step (new_row_price_data -> new_price_data)
         if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
             excluded_items.append(f"{item_name} (No data at end date)")
             continue
@@ -155,32 +155,37 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
 
     return final_rpi, excluded_items
 
-def calculate_monthly_rpi_dataframe(basket, num_months, mapping_dict):
+
+def calculate_monthly_rpi_dataframe(basket, mapping_dict):
     """
-    Calculates the Year-over-Year RPI for the last N months.
+    Calculates the Year-over-Year RPI for all available historical months.
     Returns a pandas DataFrame suitable for a Streamlit chart.
     """
-    # Use the first day of the current month as the anchor
+
+    # Define a maximum number of years to check to prevent infinite loops
+    # and provide a hard limit in case of unexpected data.
+    # OSRS has been around since 2013, so 15 years should cover everything.
+    MAX_YEARS_TO_CHECK = 15
+
     today = datetime.now().date()
     current_month_start = today.replace(day=1)
 
-    # DataFrame to store monthly results
     monthly_data = []
 
-    # Calculate RPI for each month backwards
-    for i in range(num_months):
+    # Loop backward until the current month start is before MAX_YEARS_TO_CHECK ago
+    # We use a simple counter for safety.
+    for i in range(MAX_YEARS_TO_CHECK * 12 + 1):
 
-        # Determine the target month's end (last day of the month we are calculating)
-        # This month's end date is the 'new' date.
-
-        # Calculate start date of the target month (e.g., Nov 1, 2024)
-        target_month_start = (current_month_start - timedelta(days=1)).replace(day=1)
-
-        # Calculate end date of the target month (e.g., Oct 31, 2024)
+        # 1. Determine the target month's end (the "new" date)
+        # This is the last day of the full month we are calculating RPI for.
         target_month_end = current_month_start - timedelta(days=1)
 
-        # The 'old' date is 1 year before the target month end (e.g., Oct 31, 2023)
+        # 2. Determine the "old" date (1 year prior to the target month's end)
         yoy_old_date = target_month_end - timedelta(days=365)
+
+        # Stop if the comparison date is too old (e.g., before OSRS launch)
+        if yoy_old_date.year < today.year - MAX_YEARS_TO_CHECK:
+             break
 
         # Run the RPI calculation (silently)
         rpi_value, _ = calculate_rpi(
@@ -188,7 +193,7 @@ def calculate_monthly_rpi_dataframe(basket, num_months, mapping_dict):
             start_date=yoy_old_date,
             end_date=target_month_end,
             mapping_dict=mapping_dict,
-            show_progress=False # Crucial for performance and UI cleanliness
+            show_progress=False
         )
 
         # Store the result
@@ -198,8 +203,8 @@ def calculate_monthly_rpi_dataframe(basket, num_months, mapping_dict):
                 'YoY RPI (%)': rpi_value
             })
 
-        # Move the anchor back one month
-        current_month_start = target_month_start
+        # Move the anchor back one month (the start of the target month)
+        current_month_start = target_month_end.replace(day=1)
 
     # Create DataFrame, set index, and sort chronologically
     df = pd.DataFrame(monthly_data)
