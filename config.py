@@ -14,7 +14,8 @@ DEFAULT_RPI_BASKET = {
 }
 
 # API headers.
-# We use a generic browser User-Agent to avoid being blocked by the API.
+# We use a compliant User-Agent as required by the wiki API,
+# including a contact method (Discord ID).
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    'User-Agent': 'OSRS Inflation Calculator - Discord: spenny12_'
 }
