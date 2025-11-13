@@ -17,11 +17,21 @@ DEFAULT_RPI_BASKET = {
 # Header for the 'api.weirdgloop.org' (History API)
 # This API requires a compliant User-Agent with a contact.
 WEIRDGLOOP_HEADERS = {
-    'User-Agent': 'OSRS Inflation Calculator - Discord: spenny12_'
+    'User-Agent': 'OSRS Inflation Calculator - Discord: spenny12_',
+    # --- ADDED ---
+    # Make the request look more legitimate by adding standard Accept headers
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'en-US,en;q=0.9'
 }
 
 # Header for the 'prices.runescape.wiki' (Mapping API)
 # This API is stricter and blocks our bot User-Agent. We use a generic browser one.
 MAPPING_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    # --- ADDED ---
+    # Also add Accept headers here to match the browser User-Agent
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'en-US,en;q=0.9'
 }
