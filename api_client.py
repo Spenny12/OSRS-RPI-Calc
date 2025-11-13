@@ -10,7 +10,7 @@ def get_item_mapping():
     """Fetches the complete item ID-to-name mapping from the OSRS Wiki API."""
     try:
         response = requests.get(f"{API_BASE_URL}/mapping", headers=HEADERS)
-        response.raise_for_status() # Raise an error for bad responses
+        response.raise_for_status() # Raise an error for bad responses (4xx or 5xx)
         return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"Error fetching item mapping: {e}")
@@ -19,13 +19,14 @@ def get_item_mapping():
 @st.cache_data(ttl="10m") # Cache price data for 10 minutes
 def get_price_history(item_id):
     """
-    Fetches the 1-HOUR timeseries data for a specific item ID
+    Fetches the 6-HOUR timeseries data for a specific item ID
     and resamples it to a daily average.
     """
     try:
         # --- THIS IS THE CHANGE ---
-        # We now fetch '1h' data to get the full history, not just the last year.
-        response = requests.get(f"{API_BASE_URL}/timeseries?id={item_id}&timestep=1h", headers=HEADERS)
+        # We now fetch '6h' data to get a good balance of
+        # full history and manageable response size.
+        response = requests.get(f"{API_BASE_URL}/timeseries?id={item_id}&timestep=6h", headers=HEADERS)
         response.raise_for_status()
         data = response.json().get('data', [])
 
@@ -42,11 +43,12 @@ def get_price_history(item_id):
         price_df['avgHighPrice'] = pd.to_numeric(price_df['avgHighPrice'])
         price_df['avgLowPrice'] = pd.to_numeric(price_df['avgLowPrice'])
 
-        # Forward-fill any missing *hourly* data points
+        # Forward-fill any missing 6-hour data points
         price_df = price_df.ffill()
 
-        # --- NEW LOGIC: Resample hourly data to daily data ---
+        # --- NEW LOGIC: Resample 6h data to daily data ---
         # 'D' means daily. We take the mean() of all hours for each day.
+        # This creates a robust daily average.
         daily_avg_df = price_df.resample('D').mean()
 
         # Forward-fill the *daily* data to fill in any days
@@ -56,7 +58,7 @@ def get_price_history(item_id):
         return daily_avg_df
 
     except requests.exceptions.RequestException:
-        # Don't show an error, just return None. The calculator will handle it.
+        # If the API call fails (404, 500, timeout, etc.), return None
         return None
 
 def find_item_id(item_name, mapping):
@@ -64,7 +66,6 @@ def find_item_id(item_name, mapping):
     if not mapping:
         return None
 
-    # Use a generator expression for a (slightly) faster lookup
     for item in mapping:
         if item['name'].lower() == item_name.lower():
             return item['id']
