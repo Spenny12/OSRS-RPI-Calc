@@ -117,7 +117,7 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
             excluded_items.append(f"{item_name} (Did not exist at start date)")
             continue
 
-        if new_price_data is None or pd.isna(new_row_price_data['avgHighPrice']):
+        if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
             excluded_items.append(f"{item_name} (No data at end date)")
             continue
 
