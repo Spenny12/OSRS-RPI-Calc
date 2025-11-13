@@ -11,5 +11,5 @@ DEFAULT_RPI_BASKET = {
     "Prayer potion(4)": 0.30,  # 30%
     "Adamantite bar": 0.20,    # 20%
     "Twisted bow": 0.10,       # 10%
-    "Scythe of vitur": 0.15    # 15%
+    "Scythe of vitur (uncharged)": 0.15    # 15%
 }
