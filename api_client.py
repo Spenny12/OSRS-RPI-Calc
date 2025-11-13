@@ -47,9 +47,8 @@ def get_price_history(item_id):
     """
     try:
         # --- THIS IS THE CORRECTED API ENDPOINT ---
-        # The bug was adding "/all" at the end, which is an invalid filter.
-        # The correct endpoint is just .../history/os/{item_id}
-        url = f"https://api.weirdgloop.org/exchange/history/os/{item_id}"
+        # The {game} parameter is 'osrs', not 'os'
+        url = f"https://api.weirdgloop.org/exchange/history/osrs/{item_id}"
 
         response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
