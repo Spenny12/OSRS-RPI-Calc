@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
-from config import HEADERS
+# --- NEW: Import both headers ---
+from config import WEIRDGLOOP_HEADERS, MAPPING_HEADERS
 
 @st.cache_data(ttl="6h")
 def get_item_mapping():
@@ -13,7 +14,8 @@ def get_item_mapping():
     try:
         response = requests.get(
             "https://prices.runescape.wiki/api/v1/osrs/mapping",
-            headers=HEADERS
+            # --- NEW: Use the MAPPING_HEADERS ---
+            headers=MAPPING_HEADERS
         )
         response.raise_for_status()
         mapping_data = response.json()
@@ -50,7 +52,8 @@ def get_price_history(item_id):
         # The filter is 'all', and the item ID is a query parameter.
         url = f"https://api.weirdgloop.org/exchange/history/osrs/all?id={item_id}"
 
-        response = requests.get(url, headers=HEADERS)
+        # --- NEW: Use the WEIRDGLOOP_HEADERS ---
+        response = requests.get(url, headers=WEIRDGLOOP_HEADERS)
         response.raise_for_status()
 
         # This API now returns a single object: {"id": 385, "name": "Shark", "data": [...]}

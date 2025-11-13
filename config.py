@@ -13,9 +13,15 @@ DEFAULT_RPI_BASKET = {
     "Scythe of vitur (uncharged)": 0.15
 }
 
-# API headers.
-# We use a compliant User-Agent as required by the wiki API,
-# including a contact method (Discord ID).
-HEADERS = {
+# --- NEW ---
+# Header for the 'api.weirdgloop.org' (History API)
+# This API requires a compliant User-Agent with a contact.
+WEIRDGLOOP_HEADERS = {
     'User-Agent': 'OSRS Inflation Calculator - Discord: spenny12_'
+}
+
+# Header for the 'prices.runescape.wiki' (Mapping API)
+# This API is stricter and blocks our bot User-Agent. We use a generic browser one.
+MAPPING_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
