@@ -33,9 +33,6 @@ st.header("1. Current OSRS RPI Metrics")
 today = datetime.now().date()
 
 # Define dates anchored to the 1st of the month for consistency with the historical graph.
-# This avoids discrepancies caused by daily market fluctuations.
-
-# Current period end (1st of the current month)
 current_month_start = date(today.year, today.month, 1)
 
 # Previous month start (1st of the previous month)
@@ -64,51 +61,39 @@ all_exclusions = {}
 
 with st.spinner("Calculating current RPI metrics..."):
 
-    # Redefine metrics to use the consistent 1st-of-the-month dates.
+    # --- New Metrics: Simple, Current Point-to-Point ---
+    # These metrics end TODAY to reflect the most up-to-date figure.
 
-    # YoY (Monthly): 1st of Year-1 vs 1st of Current Year
+    # 1. Current YoY (Today's Price vs 1 Year Ago)
+    current_yoy_start = today.replace(year=today.year - 1)
+    current_yoy_end = today
+    rpi_current_yoy, exc_current_yoy = calculate_metric("YoY (Current Date)", current_yoy_start, current_yoy_end)
+    all_metrics.append(("YoY (Current Date)", rpi_current_yoy, current_yoy_start, current_yoy_end))
+    all_exclusions["YoY (Current Date)"] = exc_current_yoy
+
+    # 2. Current MoM (Today's Price vs 30 Days Ago)
+    current_mom_start = today - timedelta(days=30)
+    current_mom_end = today
+    rpi_current_mom, exc_current_mom = calculate_metric("MoM (Current Date)", current_mom_start, current_mom_end)
+    all_metrics.append(("MoM (Current Date)", rpi_current_mom, current_mom_start, current_mom_end))
+    all_exclusions["MoM (Current Date)"] = exc_current_mom
+
+
+    # --- Monthly Metrics: Consistent with Graph ---
+
+    # 3. YoY (Monthly): 1st of Year-1 vs 1st of Current Year (Matches Graph logic)
     yoy_monthly_start = prev_year_start
     yoy_monthly_end = current_month_start
     rpi_yoy_monthly, exc_yoy_monthly = calculate_metric("YoY (Monthly RPI)", yoy_monthly_start, yoy_monthly_end)
     all_metrics.append(("YoY (Monthly RPI)", rpi_yoy_monthly, yoy_monthly_start, yoy_monthly_end))
     all_exclusions["YoY (Monthly RPI)"] = exc_yoy_monthly
 
-    # MoM (Monthly): 1st of Previous Month vs 1st of Current Month
+    # 4. MoM (Monthly): 1st of Previous Month vs 1st of Current Month
     mom_monthly_start = prev_month_start
     mom_monthly_end = current_month_start
     rpi_mom_monthly, exc_mom_monthly = calculate_metric("MoM (Monthly RPI)", mom_monthly_start, mom_monthly_end)
     all_metrics.append(("MoM (Monthly RPI)", rpi_mom_monthly, mom_monthly_start, mom_monthly_end))
     all_exclusions["MoM (Monthly RPI)"] = exc_mom_monthly
-
-    # Retaining the 7-Day and 30-Day metrics, but now they are calculated using today's specific date.
-
-    # YoY (30-day): 30 days ago, one year prior vs 30 days ago, today
-    yoy_30_end = today - timedelta(days=30)
-    yoy_30_compare_end = yoy_30_end.replace(year=yoy_30_end.year - 1)
-    rpi_yoy_30, exc_yoy_30 = calculate_metric("YoY (30-Day Avg)", yoy_30_compare_end, yoy_30_end)
-    all_metrics.append(("YoY (30-Day Avg)", rpi_yoy_30, yoy_30_compare_end, yoy_30_end))
-    all_exclusions["YoY (30-Day Avg)"] = exc_yoy_30
-
-    # YoY (7-day): 7 days ago, one year prior vs 7 days ago, today
-    yoy_7_end = today - timedelta(days=7)
-    yoy_7_compare_end = yoy_7_end.replace(year=yoy_7_end.year - 1)
-    rpi_yoy_7, exc_yoy_7 = calculate_metric("YoY (7-Day Avg)", yoy_7_compare_end, yoy_7_end)
-    all_metrics.append(("YoY (7-Day Avg)", rpi_yoy_7, yoy_7_compare_end, yoy_7_end))
-    all_exclusions["YoY (7-Day Avg)"] = exc_yoy_7
-
-    # MoM (30-day): 30 days ago, one month prior vs 30 days ago, today
-    mom_30_end = today - timedelta(days=30)
-    mom_30_compare_end = mom_30_end - timedelta(days=30)
-    rpi_mom_30, exc_mom_30 = calculate_metric("MoM (30-Day Avg)", mom_30_compare_end, mom_30_end)
-    all_metrics.append(("MoM (30-Day Avg)", rpi_mom_30, mom_30_compare_end, mom_30_end))
-    all_exclusions["MoM (30-Day Avg)"] = exc_mom_30
-
-    # MoM (7-day): 7 days ago, one month prior vs 7 days ago, today
-    mom_7_end = today - timedelta(days=7)
-    mom_7_compare_end = mom_7_end - timedelta(days=30)
-    rpi_mom_7, exc_mom_7 = calculate_metric("MoM (7-Day Avg)", mom_7_compare_end, mom_7_end)
-    all_metrics.append(("MoM (7-Day Avg)", rpi_mom_7, mom_7_compare_end, mom_7_end))
-    all_exclusions["MoM (7-Day Avg)"] = exc_mom_7
 
 
 # Display current RPI figures
@@ -116,8 +101,8 @@ col_yoy, col_mom = st.columns(2)
 
 with col_yoy:
     st.subheader("Year-over-Year Inflation (YoY)")
-    # Show Monthly RPI first, then the 30-day/7-day points
-    for label, value, start, end in all_metrics[:4]:
+    # Show Current Date first, then Monthly RPI
+    for label, value, start, end in all_metrics:
         if "YoY" in label:
             st.metric(
                 label=f"{label} ({start} to {end})",
@@ -126,8 +111,8 @@ with col_yoy:
 
 with col_mom:
     st.subheader("Month-over-Month Inflation (MoM)")
-    # Show Monthly RPI first, then the 30-day/7-day points
-    for label, value, start, end in all_metrics[:4]:
+    # Show Current Date first, then Monthly RPI
+    for label, value, start, end in all_metrics:
         if "MoM" in label:
             st.metric(
                 label=f"{label} ({start} to {end})",
@@ -189,19 +174,19 @@ if st.button("Calculate Historical Metrics", type="secondary"):
         DEFAULT_RPI_BASKET, h_yoy_30_compare_end, h_yoy_30_end, mapping_dict, show_progress=True
     )
 
-    st.subheader(f"Results Relative to {historical_date}:")
+    st.subheader(f"Results Relative to {historical_date}:\n*Note: Calculations use the price closest to the target date.*")
 
     h_col1, h_col2 = st.columns(2)
 
     with h_col1:
         st.metric(
-            label=f"30-Day YoY Inflation ({h_yoy_30_compare_end} to {h_yoy_30_end})",
+            label=f"Year-over-Year Inflation ({h_yoy_30_compare_end} to {h_yoy_30_end})",
             value=f"{h_rpi_yoy_30:.2f}%" if h_rpi_yoy_30 is not None else "N/A"
         )
 
     with h_col2:
         st.metric(
-            label=f"7-Day MoM Inflation ({h_mom_7_compare_end} to {h_mom_7_end})",
+            label=f"Month-over-Month Inflation ({h_mom_7_compare_end} to {h_mom_7_end})",
             value=f"{h_rpi_mom_7:.2f}%" if h_rpi_mom_7 is not None else "N/A"
         )
 
