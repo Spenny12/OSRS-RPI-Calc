@@ -57,9 +57,17 @@ def get_price_history(item_id):
 
         df = pd.DataFrame(list(price_history.items()), columns=['timestamp', 'avgHighPrice'])
 
+        # --- FIX 1: Ensure avgHighPrice is numeric ---
+        # Coerce any errors (like 'N/A') to NaN, which .ffill() will handle
+        df['avgHighPrice'] = pd.to_numeric(df['avgHighPrice'], errors='coerce')
+
         # Convert timestamps (which are in milliseconds) to datetime objects
         df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
         df = df.set_index('date')
+
+        # --- FIX 2: Drop the non-numeric timestamp column ---
+        # This column is no longer needed and will break .resample().mean()
+        df = df.drop(columns=['timestamp'])
 
         # --- THIS IS THE CRITICAL FIX ---
         # The dictionary is unsorted, so the DataFrame index is jumbled.
@@ -67,7 +75,7 @@ def get_price_history(item_id):
         df = df.sort_index()
 
         # Resample to daily (D) and forward-fill missing days (weekends, etc.)
-        # This gives us a clean, continuous price history.
+        # This will now ONLY resample the 'avgHighPrice' column
         df_daily = df.resample('D').mean()
         df_daily['avgHighPrice'] = df_daily['avgHighPrice'].ffill()
 
