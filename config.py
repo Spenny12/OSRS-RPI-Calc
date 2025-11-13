@@ -1,17 +1,20 @@
-# --- API Configuration ---
-# Set a user-agent as required by the wiki API
-# A descriptive User-Agent with a contact is required by the OSRS Wiki APIs
-# to prevent blocking.
-HEADERS = {
-    'User-Agent': 'OSRS Inflation Calculator - Discord: spenny12_'
+"""
+Configuration file for the OSRS Inflation Calculator.
+Stores the default RPI basket and API headers.
+"""
+
+# Default basket of items for the OSRS "RPI"
+# Weights should add up to 1.0
+DEFAULT_RPI_BASKET = {
+    "Shark": 0.25,
+    "Prayer potion(4)": 0.30,
+    "Adamantite bar": 0.20,
+    "Twisted bow": 0.10,
+    "Scythe of vitur (uncharged)": 0.15
 }
 
-# --- Default RPI Basket ---
-# Weights should ideally sum to 1.0 (or 100)
-DEFAULT_RPI_BASKET = {
-    "Shark": 0.25,             # 25%
-    "Prayer potion(4)": 0.30,  # 30%
-    "Adamantite bar": 0.20,    # 20%
-    "Twisted bow": 0.10,       # 10%
-    "Scythe of vitur (uncharged)": 0.15    # 15%
+# API headers.
+# We use a generic browser User-Agent to avoid being blocked by the API.
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
