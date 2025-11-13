@@ -43,13 +43,14 @@ def get_last_day_of_previous_month(d):
 
 # --- Define the four required periods ---
 
-# 1. 7-day YoY Inflation (Today vs 1 Year Ago)
-yoy_7_day_end = today
+# 1. 7-day YoY Inflation (Today - 7 days vs 1 Year Ago - 7 days)
+# Compares the price 7 days ago, one year prior, to the price 7 days ago, today.
+yoy_7_day_end = today - timedelta(days=7)
 yoy_7_day_start = yoy_7_day_end.replace(year=yoy_7_day_end.year - 1)
 
-# 2. 30-day YoY Inflation (Today vs 1 Year Ago) - Same calculation as 7-day YoY is typically used for headline figure
-# We will use the more precise comparison: 30 days ago, one year ago vs 30 days ago, today
-yoy_30_day_end = today
+# 2. 30-day YoY Inflation (Today - 30 days vs 1 Year Ago - 30 days)
+# Compares the price 30 days ago, one year prior, to the price 30 days ago, today.
+yoy_30_day_end = today - timedelta(days=30)
 yoy_30_day_start = yoy_30_day_end.replace(year=yoy_30_day_end.year - 1)
 
 
