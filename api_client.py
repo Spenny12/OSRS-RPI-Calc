@@ -5,7 +5,7 @@ from config import HEADERS
 
 API_BASE_URL = "https://prices.runescape.wiki/api/v1/osrs"
 
-@st.cache_data(ttl="6h") # Cache the mapping data for 6 hours
+@st.cache_data(ttl="1d") # Cache the mapping data for 6 hours
 def get_item_mapping():
     """Fetches the complete item ID-to-name mapping from the OSRS Wiki API."""
     try:
@@ -24,9 +24,9 @@ def get_price_history(item_id):
     """
     try:
         # --- THIS IS THE CHANGE ---
-        # We now fetch '6h' data to get a good balance of
+        # We now fetch '1d' data to get a good balance of
         # full history and manageable response size.
-        response = requests.get(f"{API_BASE_URL}/timeseries?id={item_id}&timestep=6h", headers=HEADERS)
+        response = requests.get(f"{API_BASE_URL}/timeseries?id={item_id}&timestep=1d", headers=HEADERS)
         response.raise_for_status()
         data = response.json().get('data', [])
 
@@ -46,7 +46,7 @@ def get_price_history(item_id):
         # Forward-fill any missing 6-hour data points
         price_df = price_df.ffill()
 
-        # --- NEW LOGIC: Resample 6h data to daily data ---
+        # --- NEW LOGIC: Resample 1d data to daily data ---
         # 'D' means daily. We take the mean() of all hours for each day.
         # This creates a robust daily average.
         daily_avg_df = price_df.resample('D').mean()
