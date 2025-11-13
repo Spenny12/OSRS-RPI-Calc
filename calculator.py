@@ -73,7 +73,7 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
         return {'error': f"An unexpected error occurred during calculation: {e}"}
 
 
-def calculate_rpi(basket, start_date, end_date, mapping_dict):
+def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True):
     """
     Calculates the weighted RPI for a basket of goods, handling missing items.
     """
@@ -82,11 +82,15 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict):
     excluded_items = []
     total_valid_weight = 0.0
 
-    progress_bar = st.progress(0, text="Initializing RPI calculation...")
+    # Only show progress bar if show_progress is True
+    progress_bar = None
+    if show_progress:
+        progress_bar = st.progress(0, text="Initializing RPI calculation...")
 
     for i, (item_name, original_weight) in enumerate(basket.items()):
-        progress_text = f"Calculating for '{item_name.lower()}' ({i+1}/{len(basket)})..."
-        progress_bar.progress((i+1) / len(basket), text=progress_text)
+        if show_progress and progress_bar:
+            progress_text = f"Calculating for '{item_name.lower()}' ({i+1}/{len(basket)})..."
+            progress_bar.progress((i+1) / len(basket), text=progress_text)
 
         # 1. Find the item ID
         item_info = mapping_dict.get(item_name.lower())
@@ -113,7 +117,7 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict):
             excluded_items.append(f"{item_name} (Did not exist at start date)")
             continue
 
-        if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
+        if new_price_data is None or pd.isna(new_row_price_data['avgHighPrice']):
             excluded_items.append(f"{item_name} (No data at end date)")
             continue
 
@@ -130,7 +134,8 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict):
         })
         total_valid_weight += original_weight
 
-    progress_bar.empty()
+    if show_progress and progress_bar:
+        progress_bar.empty()
 
     # --- Final RPI Calculation (Re-weighting) ---
 
