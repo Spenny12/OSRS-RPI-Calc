@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from api_client import get_item_mapping
 from calculator import calculate_rpi, calculate_monthly_rpi_dataframe
 from config import DEFAULT_RPI_BASKET
@@ -32,46 +32,20 @@ if not mapping_dict or not item_names_list:
 st.header("1. Current OSRS RPI Metrics")
 today = datetime.now().date()
 
-# Define periods for comparison
-# Note: For RPI, we calculate inflation from a start point (T-1 year/month) to an end point (T).
-# The "7-day avg" and "30-day avg" seems to refer to the comparison period's start date being offset
-# by that amount, but RPI is typically a single point-to-point comparison (e.g., Nov 13, 2024 to Nov 13, 2025).
-# I will interpret the request to mean: "Calculate RPI from (X days ago) to (X days ago one year/month ago)".
-# Let's redefine the dates to match the standard point-to-point calculation for YoY/MoM.
+# Define dates anchored to the 1st of the month for consistency with the historical graph.
+# This avoids discrepancies caused by daily market fluctuations.
 
-# YoY (30-day avg) -> RPI is calculated from 30 days ago, one year ago, to 30 days ago, today. (This is complex)
-# SIMPLIFIED STANDARD INTERPRETATION:
-# Calculate RPI from 1 year ago to today (YoY)
-# Calculate RPI from 1 month ago to today (MoM)
+# Current period end (1st of the current month)
+current_month_start = date(today.year, today.month, 1)
 
-# RPI from (Today - 365 days) to (Today)
-yoy_start_date = today - timedelta(days=365)
-yoy_end_date = today
+# Previous month start (1st of the previous month)
+if current_month_start.month == 1:
+    prev_month_start = date(current_month_start.year - 1, 12, 1)
+else:
+    prev_month_start = date(current_month_start.year, current_month_start.month - 1, 1)
 
-# RPI from (Today - 30 days) to (Today)
-mom_start_date = today - timedelta(days=30)
-mom_end_date = today
-
-
-# --- Period Definitions for Display (These were the confusing parts) ---
-# The previous definitions were trying to create average price windows, but RPI usually uses point prices.
-# To keep the labels, we simplify the logic to point-to-point RPI.
-
-# YoY (30-day avg): Let's assume this means a standard YoY calculated on the 30th day prior to today.
-yoy_30_end = today - timedelta(days=30)
-yoy_30_compare_end = yoy_30_end.replace(year=yoy_30_end.year - 1)
-
-# YoY (7-day avg): Let's assume this means a standard YoY calculated on the 7th day prior to today.
-yoy_7_end = today - timedelta(days=7)
-yoy_7_compare_end = yoy_7_end.replace(year=yoy_7_end.year - 1)
-
-# MoM (30-day avg): Let's assume this means a standard MoM calculated on the 30th day prior to today.
-mom_30_end = today - timedelta(days=30)
-mom_30_compare_end = mom_30_end - timedelta(days=30)
-
-# MoM (7-day avg): Let's assume this means a standard MoM calculated on the 7th day prior to today.
-mom_7_end = today - timedelta(days=7)
-mom_7_compare_end = mom_7_end - timedelta(days=30)
+# Previous year start (1st of the current month, one year prior)
+prev_year_start = current_month_start.replace(year=current_month_start.year - 1)
 
 
 # FIX: Simplify the function to only perform the necessary RPI calculation.
@@ -90,47 +64,77 @@ all_exclusions = {}
 
 with st.spinner("Calculating current RPI metrics..."):
 
-    # FIX: Pass the correct start and end dates directly to the simplified function.
+    # Redefine metrics to use the consistent 1st-of-the-month dates.
 
-    # YoY 30-day (Calculated from 1 year ago to today, 30 days ago)
-    rpi_yoy_30, exc_yoy_30 = calculate_metric("YoY 30-Day Avg", yoy_30_compare_end, yoy_30_end)
+    # YoY (Monthly): 1st of Year-1 vs 1st of Current Year
+    yoy_monthly_start = prev_year_start
+    yoy_monthly_end = current_month_start
+    rpi_yoy_monthly, exc_yoy_monthly = calculate_metric("YoY (Monthly RPI)", yoy_monthly_start, yoy_monthly_end)
+    all_metrics.append(("YoY (Monthly RPI)", rpi_yoy_monthly, yoy_monthly_start, yoy_monthly_end))
+    all_exclusions["YoY (Monthly RPI)"] = exc_yoy_monthly
+
+    # MoM (Monthly): 1st of Previous Month vs 1st of Current Month
+    mom_monthly_start = prev_month_start
+    mom_monthly_end = current_month_start
+    rpi_mom_monthly, exc_mom_monthly = calculate_metric("MoM (Monthly RPI)", mom_monthly_start, mom_monthly_end)
+    all_metrics.append(("MoM (Monthly RPI)", rpi_mom_monthly, mom_monthly_start, mom_monthly_end))
+    all_exclusions["MoM (Monthly RPI)"] = exc_mom_monthly
+
+    # Retaining the 7-Day and 30-Day metrics, but now they are calculated using today's specific date.
+
+    # YoY (30-day): 30 days ago, one year prior vs 30 days ago, today
+    yoy_30_end = today - timedelta(days=30)
+    yoy_30_compare_end = yoy_30_end.replace(year=yoy_30_end.year - 1)
+    rpi_yoy_30, exc_yoy_30 = calculate_metric("YoY (30-Day Avg)", yoy_30_compare_end, yoy_30_end)
     all_metrics.append(("YoY (30-Day Avg)", rpi_yoy_30, yoy_30_compare_end, yoy_30_end))
     all_exclusions["YoY (30-Day Avg)"] = exc_yoy_30
 
-    # YoY 7-day (Calculated from 1 year ago to today, 7 days ago)
-    rpi_yoy_7, exc_yoy_7 = calculate_metric("YoY 7-Day Avg", yoy_7_compare_end, yoy_7_end)
+    # YoY (7-day): 7 days ago, one year prior vs 7 days ago, today
+    yoy_7_end = today - timedelta(days=7)
+    yoy_7_compare_end = yoy_7_end.replace(year=yoy_7_end.year - 1)
+    rpi_yoy_7, exc_yoy_7 = calculate_metric("YoY (7-Day Avg)", yoy_7_compare_end, yoy_7_end)
     all_metrics.append(("YoY (7-Day Avg)", rpi_yoy_7, yoy_7_compare_end, yoy_7_end))
     all_exclusions["YoY (7-Day Avg)"] = exc_yoy_7
 
-    # MoM 30-day (Calculated from 1 month ago to today, 30 days ago)
+    # MoM (30-day): 30 days ago, one month prior vs 30 days ago, today
+    mom_30_end = today - timedelta(days=30)
+    mom_30_compare_end = mom_30_end - timedelta(days=30)
     rpi_mom_30, exc_mom_30 = calculate_metric("MoM (30-Day Avg)", mom_30_compare_end, mom_30_end)
     all_metrics.append(("MoM (30-Day Avg)", rpi_mom_30, mom_30_compare_end, mom_30_end))
     all_exclusions["MoM (30-Day Avg)"] = exc_mom_30
 
-    # MoM 7-day (Calculated from 1 month ago to today, 7 days ago)
+    # MoM (7-day): 7 days ago, one month prior vs 7 days ago, today
+    mom_7_end = today - timedelta(days=7)
+    mom_7_compare_end = mom_7_end - timedelta(days=30)
     rpi_mom_7, exc_mom_7 = calculate_metric("MoM (7-Day Avg)", mom_7_compare_end, mom_7_end)
     all_metrics.append(("MoM (7-Day Avg)", rpi_mom_7, mom_7_compare_end, mom_7_end))
     all_exclusions["MoM (7-Day Avg)"] = exc_mom_7
+
 
 # Display current RPI figures
 col_yoy, col_mom = st.columns(2)
 
 with col_yoy:
     st.subheader("Year-over-Year Inflation (YoY)")
-    for label, value, start, end in all_metrics[:2]:
-        st.metric(
-            label=f"{label} ({start} to {end})",
-            value=f"{value:.2f}%" if value is not None else "N/A"
-        )
+    # Show Monthly RPI first, then the 30-day/7-day points
+    for label, value, start, end in all_metrics[:4]:
+        if "YoY" in label:
+            st.metric(
+                label=f"{label} ({start} to {end})",
+                value=f"{value:.2f}%" if value is not None else "N/A"
+            )
 
 with col_mom:
     st.subheader("Month-over-Month Inflation (MoM)")
-    for label, value, start, end in all_metrics[2:]:
-        st.metric(
-            label=f"{label} ({start} to {end})",
-            value=f"{value:.2f}%" if value is not None else "N/A"
-        )
+    # Show Monthly RPI first, then the 30-day/7-day points
+    for label, value, start, end in all_metrics[:4]:
+        if "MoM" in label:
+            st.metric(
+                label=f"{label} ({start} to {end})",
+                value=f"{value:.2f}%" if value is not None else "N/A"
+            )
 
+# ... (rest of the file remains the same)
 # Display exclusions in a dedicated section
 all_excluded = [item for sublist in all_exclusions.values() for item in sublist]
 if all_excluded:
