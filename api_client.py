@@ -37,60 +37,53 @@ def get_item_mapping():
         st.error(f"Error fetching item mapping: {e}")
         return None, None
 
-# --- CRITICAL: Caching is DISABLED for debugging ---
-# @st.cache_data(ttl="10m")
+# --- Caching is now RE-ENABLED ---
+@st.cache_data(ttl="10m")
 def get_price_history(item_id):
     """
-    Fetches full historical data and returns a (DataFrame, debug_info) tuple.
-    Caching is disabled to allow for live debugging of API responses.
+    Fetches full historical data using the 'all' endpoint and returns a DataFrame.
     """
     url = f"https://api.weirdgloop.org/exchange/history/osrs/all?id={item_id}"
 
-    # This dictionary will hold all our debug info
-    debug_info = {
-        "url": url,
-        "status_code": None,
-        "response_text": None,
-        "error": None
-    }
-
     try:
         response = requests.get(url, headers=WEIRDGLOOP_HEADERS)
-        debug_info["status_code"] = response.status_code
-        debug_info["response_text"] = response.text
-
-        response.raise_for_status() # Will trigger error if status is 4xx or 5xx
+        response.raise_for_status()
 
         price_data = response.json()
-        price_history = price_data.get('data', [])
+
+        # --- THIS IS THE FINAL BUG FIX ---
+        # The data is in a key named after the item_id (e.g., "385")
+        # not a key named "data".
+        price_history = price_data.get(str(item_id), [])
 
         if not price_history:
-            # This is a successful call but with no data
-            debug_info["error"] = "API returned a successful response but with an empty 'data' list."
-            return None, debug_info
+            return None # API returned no data for this item
 
         # --- Convert list of objects to a DataFrame ---
         df = pd.DataFrame(price_history)
 
-        # --- CRITICAL FIXES ---
+        # --- Data Processing ---
         df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
         df = df.set_index('date')
         df = df.rename(columns={'price': 'avgHighPrice'})
-        df = df.drop(columns=['timestamp', 'volume'])
+
+        # Safely drop columns that may or may not exist
+        cols_to_drop = ['timestamp', 'volume', 'id']
+        for col in cols_to_drop:
+            if col in df.columns:
+                df = df.drop(columns=[col])
+
         df['avgHighPrice'] = pd.to_numeric(df['avgHighPrice'], errors='coerce')
         df = df.sort_index()
+
+        # Resample to daily, then fill gaps
         df_daily = df.resample('D').mean()
         df_daily['avgHighPrice'] = df_daily['avgHighPrice'].bfill().ffill()
 
-        # Success! Return the data and the debug info
-        return df_daily, debug_info
+        return df_daily
 
-    except requests.exceptions.RequestException as e:
-        # This catches HTTP errors (e.g., 404, 500)
-        debug_info["error"] = f"RequestException: {e}"
-        return None, debug_info
-    except Exception as e:
-        # This catches other errors, like JSON parsing
-        debug_info["error"] = f"ProcessingException: {e}"
-        # response_text will already be set, so we can debug it
-        return None, debug_info
+    except requests.exceptions.RequestException:
+        return None
+    except Exception:
+        # Catch any other processing errors (like JSON parsing)
+        return None
