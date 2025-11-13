@@ -8,7 +8,7 @@ from config import HEADERS
 def get_item_mapping():
     """
     Fetches the complete item ID-to-name mapping from the OSRS Wiki API.
-    Processes the data into a fast lookup dictionary and a sorted list of names.
+    This function remains the same, as it's the best way to get IDs.
     """
     try:
         response = requests.get(
@@ -18,23 +18,18 @@ def get_item_mapping():
         response.raise_for_status()
         mapping_data = response.json()
 
-        # --- NEW: Process into a high-speed dictionary ---
-        # Key: item name (lowercase)
-        # Value: {'id': 123, 'name': "Item Name"}
         mapping_dict = {}
         item_names_list = []
 
         for item in mapping_data:
-            # Ensure the item has a name and isn't a placeholder
             if 'name' in item and 'id' in item and not item['name'].startswith("Exchange ticket"):
                 item_name_lower = item['name'].lower()
                 mapping_dict[item_name_lower] = {
                     'id': item['id'],
-                    'name': item['name'] # Store the original case-sensitive name
+                    'name': item['name']
                 }
                 item_names_list.append(item_name_lower)
 
-        # Sort the list for the UI
         item_names_list.sort()
 
         return mapping_dict, item_names_list
@@ -46,62 +41,54 @@ def get_item_mapping():
 @st.cache_data(ttl="10m")
 def get_price_history(item_id):
     """
-    Fetches the full historical graph data from the Jagex API for a specific item ID.
-    This provides un-rounded, daily data for the item's entire history.
+    --- NEW: Fetches full historical data from the 'weirdgloop' API ---
+    This is the underlying API the OSRS Wiki uses for its historical charts.
+    It should provide the complete, non-truncated history for all items.
     """
     try:
-        # --- NEW: Using the Jagex API for full history ---
-        url = f"https://services.runescape.com/m=itemdb_oldschool/api/graph/{item_id}.json"
+        # --- THIS IS THE NEW API ENDPOINT ---
+        url = f"https://api.weirdgloop.org/exchange/history/os/{item_id}/all"
 
         response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
-        data = response.json()
-
-        # The 'daily' key holds a dictionary of: {timestamp: price}
-        # --- THE FIX: Switch from 'daily' to 'average' ---
-        price_history = data.get('average')
+        # This API returns a list of objects: [{"timestamp": 123, "price": 123, "volume": 123}]
+        price_history = response.json()
 
         if not price_history:
-            # This can happen for items Jagex doesn't list
             return None
 
-        # --- Convert dictionary to a DataFrame ---
-        df = pd.DataFrame(
-            list(price_history.items()),
-            columns=['timestamp', 'avgHighPrice']
-        )
+        # --- Convert list of objects to a DataFrame ---
+        df = pd.DataFrame(price_history)
 
         # --- CRITICAL FIXES ---
 
-        # 1. Convert timestamp (which is a string) to numeric, then to datetime
-        #    This is the safest way to handle the API's string timestamps.
-        df['date'] = pd.to_datetime(pd.to_numeric(df['timestamp']), unit='ms')
+        # 1. Convert timestamp (which is in milliseconds) to datetime
+        df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
         df = df.set_index('date')
 
-        # 2. Drop the now-useless timestamp column BEFORE resampling
-        df = df.drop(columns=['timestamp'])
+        # 2. Rename the 'price' column to match our existing code
+        df = df.rename(columns={'price': 'avgHighPrice'})
 
-        # 3. Ensure price is numeric, coercing errors
+        # 3. Drop columns we don't need before resampling
+        df = df.drop(columns=['timestamp', 'volume'])
+
+        # 4. Ensure price is numeric, coercing errors
         df['avgHighPrice'] = pd.to_numeric(df['avgHighPrice'], errors='coerce')
 
-        # 4. CRITICAL: Sort the index. asof() requires a sorted index.
+        # 5. CRITICAL: Sort the index. asof() requires a sorted index.
         df = df.sort_index()
 
-        # 5. Resample to a full daily index ('D') and get the mean.
-        #    This creates a clean, gap-less daily timeline.
+        # 6. Resample to a full daily index ('D') and get the mean.
+        #    (This handles if there are multiple trades in one day)
         df_daily = df.resample('D').mean()
 
-        # 6. Fill all gaps.
-        #    ffill() fills gaps after the item's release.
-        #    bfill() fills gaps at the *start* of the data (e.g., if Jagex
-        #    has data starting from 2014, this fills backward to the
-        #    beginning of pandas' default time, which is fine for .asof())
+        # 7. Fill all gaps.
         df_daily['avgHighPrice'] = df_daily['avgHighPrice'].ffill().bfill()
 
         return df_daily
 
     except requests.exceptions.RequestException:
-        # This will catch 404s (for items Jagex doesn't track) or other errors
+        # This will catch 404s (for items this API doesn't track)
         return None
     except Exception:
         # Catch other errors, like JSON parsing
