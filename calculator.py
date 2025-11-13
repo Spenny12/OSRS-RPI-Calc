@@ -79,7 +79,7 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
 def calculate_monthly_rpi_dataframe(basket, mapping_dict):
     """
     Generates a DataFrame of monthly YoY RPI figures spanning the entire available history.
-    It stops when the RPI cannot be calculated for the whole basket anymore.
+    It stops when the RPI cannot be calculated for the whole basket anymore, or before 2014.
     """
 
     today = datetime.now().date()
@@ -95,11 +95,15 @@ def calculate_monthly_rpi_dataframe(basket, mapping_dict):
         # 1. Define the end date (1st of the current month)
         end_date = current_date
 
+        # --- FIX: Stop iterating when the current end date is 2014 or earlier. ---
+        # If current_date is Jan 1, 2014, the start_date would be Jan 1, 2013,
+        # which is before the user-requested limit. We stop before calculating data for 2014.
+        # If the user wants the earliest *start date* to be 2014, we should stop when
+        # the *end date* (current_date) becomes 2014.
+        if current_date.year <= 2014:
+            break
+
         # 2. Define the start date (1st of the same month, one year prior)
-        # Since current_date is always the 1st of the month, we can safely subtract
-        # a year without running into Feb 29th issues (unless the historical data
-        # spans a year before 0001, which is impossible with Python's date object).
-        # We also remove the unnecessary try/except block.
         start_date = date(current_date.year - 1, current_date.month, 1)
 
 
