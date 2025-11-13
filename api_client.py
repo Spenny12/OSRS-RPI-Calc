@@ -2,71 +2,96 @@ import streamlit as st
 import requests
 import pandas as pd
 from config import HEADERS
+from datetime import datetime
 
 API_BASE_URL = "https://prices.runescape.wiki/api/v1/osrs"
 
-@st.cache_data(ttl="1d") # Cache the mapping data for 6 hours
+@st.cache_data(ttl="6h") # Cache the mapping data for 6 hours
 def get_item_mapping():
-    """Fetches the complete item ID-to-name mapping from the OSRS Wiki API."""
+    """
+    Fetches the complete item ID-to-name mapping and processes it into
+    a fast lookup dictionary and a sorted list of names.
+    """
     try:
         response = requests.get(f"{API_BASE_URL}/mapping", headers=HEADERS)
         response.raise_for_status() # Raise an error for bad responses (4xx or 5xx)
-        return response.json()
+
+        mapping_data = response.json()
+
+        # --- NEW: Process into a high-speed dictionary (hash map) ---
+        # This makes lookups instantaneous: mapping_dict['Shark'] -> 385
+        mapping_dict = {
+            item['name'].lower(): {
+                'id': item['id'],
+                'examine': item.get('examine', ''),
+                'members': item.get('members', False)
+            }
+            for item in mapping_data if 'name' in item and 'id' in item
+        }
+
+        # Get a sorted list of item names for the UI
+        item_names_list = sorted(item.lower() for item in mapping_dict.keys())
+
+        return mapping_dict, item_names_list
+
     except requests.exceptions.RequestException as e:
         st.error(f"Error fetching item mapping: {e}")
-        return None
+        return None, None
 
 @st.cache_data(ttl="10m") # Cache price data for 10 minutes
 def get_price_history(item_id):
     """
-    Fetches the 6-HOUR timeseries data for a specific item ID
-    and resamples it to a daily average.
+    Fetches price history for an item, trying multiple timesteps for resilience.
+    It will try '6h', '1h', and '24h' in order.
     """
+
+    # --- NEW: Resilient API Fallback Logic ---
+    # We try '6h' first (good balance), then '1h' (for low-vol items),
+    # then '24h' (as a last resort).
+    timesteps_to_try = ['6h', '1h', '24h']
+    data = None
+
+    for timestep in timesteps_to_try:
+        try:
+            url = f"{API_BASE_URL}/timeseries?id={item_id}&timestep={timestep}"
+            response = requests.get(url, headers=HEADERS)
+            response.raise_for_status()
+
+            json_data = response.json()
+            if json_data.get('data'):
+                data = json_data['data']
+                # Found data, stop trying
+                break
+
+        except requests.exceptions.RequestException:
+            # This timestep failed (e.g., 404), try the next one
+            continue
+
+    if not data:
+        # We tried all timesteps and none worked or returned data
+        return None
+
+    # --- Process the data we found ---
     try:
-        # --- THIS IS THE CHANGE ---
-        # We now fetch '1d' data to get a good balance of
-        # full history and manageable response size.
-        response = requests.get(f"{API_BASE_URL}/timeseries?id={item_id}&timestep=1d", headers=HEADERS)
-        response.raise_for_status()
-        data = response.json().get('data', [])
-
-        if not data:
-            return None
-
-        # Load into a pandas DataFrame
         df = pd.DataFrame(data)
         df['date'] = pd.to_datetime(df['timestamp'], unit='s')
         df = df.set_index('date')
 
-        # Select and clean price data
         price_df = df[['avgHighPrice', 'avgLowPrice']].copy()
         price_df['avgHighPrice'] = pd.to_numeric(price_df['avgHighPrice'])
         price_df['avgLowPrice'] = pd.to_numeric(price_df['avgLowPrice'])
 
-        # Forward-fill any missing 6-hour data points
+        # Forward-fill any missing data points within the *original* timestep
         price_df = price_df.ffill()
 
-        # --- NEW LOGIC: Resample 1d data to daily data ---
-        # 'D' means daily. We take the mean() of all hours for each day.
-        # This creates a robust daily average.
+        # Resample to a consistent daily average ('D')
         daily_avg_df = price_df.resample('D').mean()
 
-        # Forward-fill the *daily* data to fill in any days
-        # with no trades (e.g., system updates, weekends for rare items)
+        # Forward-fill the *daily* data to fill in days with no trades
         daily_avg_df = daily_avg_df.ffill()
 
         return daily_avg_df
 
-    except requests.exceptions.RequestException:
-        # If the API call fails (404, 500, timeout, etc.), return None
+    except Exception:
+        # Failed to process the data (e.g., empty, corrupt)
         return None
-
-def find_item_id(item_name, mapping):
-    """Finds the item ID for a given item name from the mapping."""
-    if not mapping:
-        return None
-
-    for item in mapping:
-        if item['name'].lower() == item_name.lower():
-            return item['id']
-    return None

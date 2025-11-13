@@ -1,75 +1,68 @@
 import streamlit as st
 from datetime import datetime, timedelta
-
-# Import your custom modules
-from config import DEFAULT_RPI_BASKET
 from api_client import get_item_mapping
 from calculator import calculate_rpi
+from config import DEFAULT_RPI_BASKET
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="OSRS Inflation Calculator",
-    page_icon="📈",
-    layout="centered",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="OSRS Inflation Calculator", page_icon="📈", layout="wide")
 
-# --- Main Page Content ---
 st.title("📈 OSRS Inflation Calculator")
+
 st.markdown("""
-Welcome to the Old School Runescape Inflation Calculator!
+Welcome! This tool calculates the inflation rate for items in Old School Runescape.
 
-This tool uses real-time price data from the [OSRS Wiki API](https://prices.runescape.wiki/) to
-calculate in-game inflation rates.
+The "OSRS RPI" displayed below is a weighted inflation rate based on a default basket of popular items,
+calculated from **one year ago to today**.
 
-The "OSRS RPI" displayed below is a 'Retail Price Index' for our default
-basket of common items, calculated for the past 365 days.
-
-Use the sidebar to navigate to the **Custom Calculator** to:
-* Calculate inflation for any single item.
-* Build your own custom basket of items and calculate its weighted inflation.
+Use the **"Custom Calculator"** page in the sidebar to:
+- Calculate inflation for any single item.
+- Build your own custom RPI basket.
+- Select custom date ranges.
 """)
 
+st.header(f"Default OSRS 'RPI' (Last 365 Days)")
+
 # --- Load Mapping Data ---
-# We need this to pass to the calculator
-try:
-    with st.spinner("Loading item database..."):
-        mapping = get_item_mapping()
-    
-    if not mapping:
-        st.error("Failed to load OSRS item database. The API might be down. Please try again later.", icon="🚨")
+# Use a spinner for good user experience
+with st.spinner("Loading OSRS item database..."):
+    # NEW: get_item_mapping now returns two values
+    mapping_dict, item_names_list = get_item_mapping()
+
+# --- Main App Logic ---
+if mapping_dict and item_names_list:
+    # --- RPI Calculation ---
+    today = datetime.now().date()
+    start_date = today - timedelta(days=365)
+
+    with st.spinner("Calculating default RPI..."):
+        # NEW: Pass the mapping_dict for fast lookups
+        rpi_value, excluded_items = calculate_rpi(
+            DEFAULT_RPI_BASKET,
+            start_date,
+            end_date=today,
+            mapping_dict=mapping_dict
+        )
+
+    if rpi_value is not None:
+        st.metric(
+            label=f"Weighted Inflation ({start_date} to {today})",
+            value=f"{rpi_value:.2f}%"
+        )
+        if excluded_items:
+            st.warning(f"Some items were excluded from this calculation:")
+            for item in excluded_items:
+                st.markdown(f"- {item}")
     else:
-        # --- Default RPI Calculation ---
-        st.header(f"Default 'RPI' (Last 365 Days)")
-        
-        with st.spinner("Calculating default RPI..."):
-            today = datetime.now().date()
-            start_date = today - timedelta(days=365)
-            
-            # Run the calculation
-            rpi_value, excluded = calculate_rpi(DEFAULT_RPI_BASKET, start_date, today, mapping)
-        
-        if rpi_value is not None:
-            # Display the main metric
-            st.metric(
-                label=f"Weighted Inflation ({start_date} to {today})",
-                value=f"{rpi_value:.2f}%"
-            )
-            
-            # Display the basket it was based on
-            with st.expander("See default basket composition"):
-                st.json({k: f"{v*100:.0f}% weight" for k, v in DEFAULT_RPI_BASKET.items()})
+        # NEW: Improved error message
+        st.error("Could not calculate the RPI. No valid data was found for any item in the basket for this period.")
+        if excluded_items:
+            st.subheader("Reasons for failure:")
+            st.markdown("All items in the basket failed. Here are the reasons:")
+            for item in excluded_items:
+                st.markdown(f"- {item}")
 
-            # Display any warnings if items were excluded
-            if excluded:
-                st.warning(f"Some items were excluded from this calculation (e.g., did not exist): {', '.join(excluded)}")
-        else:
-            # THIS IS THE UPDATED ERROR BLOCK
-            st.error("Could not calculate the RPI. No valid data was found for any item in the basket for this period.", icon="🚨")
-            if excluded:
-                st.subheader("Reasons for failure:")
-                st.warning(f"All items in the basket failed. Here are the reasons:\n\n* " + "\n* ".join(excluded))
-            st.info("This often happens if the API is temporarily down or if the selected date range is before any of the items existed.")
+    st.subheader("Default Basket Definition")
+    st.json({k: f"{v*100:.0f}%" for k, v in DEFAULT_RPI_BASKET.items()})
 
-except Exception as e:
-    st.error(f"An unexpected error occurred: {e}", icon="🔥")
+else:
+    st.error("Failed to load OSRS item database. The API might be down. Please try again later.")

@@ -1,78 +1,119 @@
-import pandas as pd
-from api_client import get_price_history, find_item_id
 import streamlit as st
+import pandas as pd
+from datetime import datetime
+from api_client import get_price_history
 
-def get_item_price_on_date(price_df, target_date):
-    """
-    Safely gets the price data for a target date from a price dataframe.
-
-    Returns a dictionary {'price': N, 'actual_date': Y} or None.
-    """
-    if price_df is None or price_df.empty:
-        return None
-
-    # Use .asof() to find the closest price row at or before the target_date
-    price_row = price_df.asof(pd.to_datetime(target_date))
-
-    # .asof() returns None if target_date is before the first date in the index
-    if price_row is None or pd.isna(price_row['avgHighPrice']):
-        return None
-
-    return {
-        'price': price_row['avgHighPrice'],
-        'actual_date': price_row.name.date()
-    }
-
-def calculate_inflation(old_price, new_price):
+def calculate_inflation_percent(old_price, new_price):
     """Calculates the percentage change between two prices."""
-    if old_price is None or new_price is None or old_price == 0 or pd.isna(old_price) or pd.isna(new_price):
-        return 0
-    return ((new_price - old_price) / old_price) * 100
+    if old_price is None or new_price is None or pd.isna(old_price) or pd.isna(new_price) or old_price == 0:
+        return 0.0
+    return ((new_price - old_price) / old_price) * 100.0
 
-def calculate_rpi(basket, start_date, end_date, mapping):
+def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dict):
     """
-    Calculates the weighted RPI for a basket of goods, handling missing items
-    and providing detailed error reasons.
+    Fetches data and calculates inflation for a single item.
+    Returns a dictionary with results or an error message.
     """
+
+    # --- NEW: Instant lookup from the dictionary ---
+    item_info = mapping_dict.get(item_name.lower())
+
+    if not item_info:
+        return {'error': f"ID not found for '{item_name}'. (Item name may be incorrect)"}
+
+    item_id = item_info['id']
+    price_df = get_price_history(item_id)
+
+    if price_df is None or price_df.empty:
+        return {'error': f"API call failed or no price data found for '{item_name}'. (Timesteps 6h, 1h, 24h all failed)"}
+
+    try:
+        # Use .asof() to find the closest price to our dates
+        old_price_data = price_df.asof(pd.to_datetime(start_date))
+        new_price_data = price_df.asof(pd.to_datetime(end_date))
+
+        # --- Error checking ---
+        if old_price_data is None or pd.isna(old_price_data['avgHighPrice']):
+            return {'error': f"No price data found for '{item_name}' on or before {start_date}. (Item may not have existed)"}
+
+        if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
+            return {'error': f"No price data found for '{item_name}' on or before {end_date}."}
+
+        # --- Valid data, proceed ---
+        old_price = old_price_data['avgHighPrice']
+        new_price = new_price_data['avgHighPrice']
+
+        # Get the actual dates of the prices found
+        actual_start_date = old_price_data.name.date()
+        actual_end_date = new_price_data.name.date()
+
+        inflation_rate = calculate_inflation_percent(old_price, new_price)
+
+        return {
+            'error': None,
+            'item_name': item_name,
+            'inflation_rate': inflation_rate,
+            'old_price': old_price,
+            'new_price': new_price,
+            'actual_start_date': actual_start_date,
+            'actual_end_date': actual_end_date,
+            'price_df': price_df
+        }
+
+    except Exception as e:
+        return {'error': f"An unexpected error occurred during calculation: {e}"}
+
+
+def calculate_rpi(basket, start_date, end_date, mapping_dict):
+    """
+    Calculates the weighted RPI for a basket of goods, handling missing items.
+    Returns the final RPI value and a list of excluded items.
+    """
+
     valid_results = []
     excluded_items = []
     total_valid_weight = 0.0
 
-    # Use a progress bar for user feedback during API calls
+    # Use a progress bar for user feedback
     progress_bar = st.progress(0, text="Initializing RPI calculation...")
 
     for i, (item_name, original_weight) in enumerate(basket.items()):
-        progress_text = f"Calculating for '{item_name}' ({i+1}/{len(basket)})..."
+        progress_text = f"Calculating for '{item_name.lower()}' ({i+1}/{len(basket)})..."
         progress_bar.progress((i+1) / len(basket), text=progress_text)
 
-        # 1. Check for Item ID
-        item_id = find_item_id(item_name, mapping)
-        if not item_id:
+        # --- NEW: Instant lookup from the dictionary ---
+        item_info = mapping_dict.get(item_name.lower())
+
+        if not item_info:
             excluded_items.append(f"{item_name} (ID not found)")
             continue
 
-        # 2. Check API Response
+        item_id = item_info['id']
         price_df = get_price_history(item_id)
+
         if price_df is None or price_df.empty:
-            # THIS IS THE NEW, CLEARER ERROR
             excluded_items.append(f"{item_name} (API call failed or no price data)")
             continue
 
-        # 3. Check for Old Price
-        old_price_data = get_item_price_on_date(price_df, start_date)
-        if old_price_data is None:
-            # This is now the ONLY way to get this specific message
-            excluded_items.append(f"{item_name} (Did not exist at start date)")
-            continue
+        # Use .asof() to find the closest price
+        old_price_data = price_df.asof(pd.to_datetime(start_date))
+        new_price_data = price_df.asof(pd.to_datetime(end_date))
 
-        # 4. Check for New Price
-        new_price_data = get_item_price_on_date(price_df, end_date)
-        if new_price_data is None:
+        # Check if price data exists at the start date.
+        if old_price_data is None or pd.isna(old_price_data['avgHighPrice']):
+            excluded_items.append(f"{item_name} (Did not exist at start date)")
+            continue # Skip this item
+
+        # Check for price at end date (less common, but possible)
+        if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
             excluded_items.append(f"{item_name} (No data at end date)")
-            continue
+            continue # Skip this item
 
         # --- If we get here, the item is valid ---
-        item_inflation = calculate_inflation(old_price_data['price'], new_price_data['price'])
+        old_price = old_price_data['avgHighPrice']
+        new_price = new_price_data['avgHighPrice']
+
+        item_inflation = calculate_inflation_percent(old_price, new_price)
 
         valid_results.append({
             'name': item_name,

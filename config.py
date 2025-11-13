@@ -1,11 +1,11 @@
 # --- API Configuration ---
 # Set a user-agent as required by the wiki API
 HEADERS = {
-    'User-Agent': 'OSRS Inflation Calculator - v2.0'
+    'User-Agent': 'OSRS Inflation Calculator - MyProject v1.0'
 }
 
-# --- Default Basket Configuration ---
-# Weights must sum to 1.0
+# --- Default RPI Basket ---
+# Weights should ideally sum to 1.0 (or 100)
 DEFAULT_RPI_BASKET = {
     "Shark": 0.25,             # 25%
     "Prayer potion(4)": 0.30,  # 30%
