@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 from api_client import get_price_history
-import calendar
+from math import floor
 
 def calculate_inflation_percent(old_price, new_price):
     """
@@ -44,6 +44,7 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
         if old_price_data is None or pd.isna(old_price_data['avgHighPrice']):
             return {'error': f"No price data found for '{item_name}' on or before {start_date}. (Item may not have existed)"}
 
+        # FIX: Changed new_row_price_data to new_price_data
         if new_price_data is None or pd.isna(new_price_data['avgHighPrice']):
             return {'error': f"No price data found for '{item_name}' on or before {end_date}."}
 
@@ -74,9 +75,69 @@ def calculate_single_item_inflation(item_name, start_date, end_date, mapping_dic
         return {'error': f"An unexpected error occurred during calculation: {e}"}
 
 
+@st.cache_data(ttl="1h") # Cache the entire historical calculation for 1 hour
+def calculate_monthly_rpi_dataframe(basket, mapping_dict):
+    """
+    Generates a DataFrame of monthly YoY RPI figures spanning the entire available history.
+    It stops when the RPI cannot be calculated for the whole basket anymore.
+    """
+
+    today = datetime.now().date()
+    # Start at the 1st of the current month
+    current_date = date(today.year, today.month, 1)
+
+    rpi_data = []
+
+    # Set a safe limit (e.g., 20 years) to prevent infinite loops if data is sparse
+    max_months = 240
+
+    for _ in range(max_months):
+        # 1. Define the end date (1st of the current month)
+        end_date = current_date
+
+        # 2. Define the start date (1st of the same month, one year prior)
+        # Handle leap year (Feb 29th) safely by using try/except
+        try:
+            start_date = date(current_date.year - 1, current_date.month, current_date.day)
+        except ValueError:
+            # If current_date is Feb 29th, and year-1 is not a leap year,
+            # we default to the last day of Feb (28th) to prevent crash.
+            start_date = date(current_date.year - 1, current_date.month, 28)
+
+        # Calculate RPI for this specific month
+        rpi_value, excluded = calculate_rpi(
+            basket,
+            start_date,
+            end_date,
+            mapping_dict,
+            show_progress=False # Always suppress progress bar for history calculation
+        )
+
+        # Stop if no RPI value could be calculated (means the data runs out)
+        if rpi_value is None:
+            break
+
+        rpi_data.append({
+            'date': end_date,
+            'rpi': rpi_value
+        })
+
+        # Move to the previous month (by setting day to 1, then subtracting one day)
+        if current_date.month == 1:
+            current_date = date(current_date.year - 1, 12, 1)
+        else:
+            current_date = date(current_date.year, current_date.month - 1, 1)
+
+    df = pd.DataFrame(rpi_data)
+    if not df.empty:
+        df = df.set_index('date').sort_index()
+    return df
+
+
 def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True):
     """
     Calculates the weighted RPI for a basket of goods, handling missing items.
+    'show_progress' controls whether a Streamlit progress bar is displayed.
     """
 
     valid_results = []
@@ -85,13 +146,19 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
 
     if show_progress:
         progress_bar = st.progress(0, text="Initializing RPI calculation...")
+    else:
+        # Use a dummy object if no progress bar is requested
+        class DummyProgress:
+            def progress(self, *args, **kwargs): pass
+            def empty(self): pass
+        progress_bar = DummyProgress()
 
-    basket_items = list(basket.items())
+    for i, (item_name, original_weight) in enumerate(basket.items()):
 
-    for i, (item_name, original_weight) in enumerate(basket_items):
+        # Calculate progress step
         if show_progress:
-            progress_text = f"Calculating for '{item_name.lower()}' ({i+1}/{len(basket_items)})..."
-            progress_bar.progress((i+1) / len(basket_items), text=progress_text)
+            progress_text = f"Calculating for '{item_name.lower()}' ({i+1}/{len(basket)})..."
+            progress_bar.progress((i+1) / len(basket), text=progress_text)
 
         # 1. Find the item ID
         item_info = mapping_dict.get(item_name.lower())
@@ -105,6 +172,7 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
         price_df = get_price_history(item_id)
 
         if price_df is None or price_df.empty:
+            # --- THIS ERROR MESSAGE IS NOW CORRECT ---
             excluded_items.append(f"{item_name} (No price data from Wiki API)")
             continue
 
@@ -134,6 +202,7 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
         })
         total_valid_weight += original_weight
 
+    # Clear progress bar only if it was shown
     if show_progress:
         progress_bar.empty()
 
@@ -152,49 +221,3 @@ def calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=True
         final_rpi += weighted_contribution
 
     return final_rpi, excluded_items
-
-
-@st.cache_data(ttl="1h") # Cache the entire historical calculation for 6 hours
-def calculate_monthly_rpi_dataframe(basket, mapping_dict):
-    """
-    Calculates the Year-over-Year (YoY) RPI for the last day of every month
-    since data started, up to a reasonable limit.
-    """
-
-    today = date.today()
-    current_date = date(today.year, today.month, 1) - timedelta(days=1) # Start at last day of last month
-
-    rpi_data = []
-
-    # Loop backwards to calculate RPI for each month
-    # We will stop if the year becomes 2012 (before the API data existed)
-    while current_date.year > 2012:
-
-        # End date for the calculation (last day of the month)
-        end_date = current_date
-
-        # Start date for the YoY calculation (same day one year ago)
-        start_date = date(current_date.year - 1, current_date.month, current_date.day)
-
-        # Calculate RPI (silently)
-        rpi_value, _ = calculate_rpi(basket, start_date, end_date, mapping_dict, show_progress=False)
-
-        if rpi_value is not None:
-            rpi_data.append({
-                'Date': end_date,
-                'YoY RPI (%)': rpi_value
-            })
-
-        # Move to the last day of the previous month
-        if current_date.month == 1:
-            current_date = date(current_date.year - 1, 12, 31)
-        else:
-            # Find the last day of the month before
-            current_date = date(current_date.year, current_date.month, 1) - timedelta(days=1)
-
-    if not rpi_data:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(rpi_data)
-    df = df.set_index('Date').sort_index()
-    return df
