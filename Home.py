@@ -10,12 +10,12 @@ st.set_page_config(page_title="OSRS Inflation Calculator", page_icon="📈", lay
 st.title("OSRS Inflation Calculator")
 
 st.markdown("""
-This is the Lil Chungies inflation tool, created my Mod Kieren and Mod Spenny!
+Welcome! This tool calculates the inflation rate for items in Old School Runescape.
 
-The **OSRS RPI** below is a weighted inflation rate based on a default basket of a load of popular items.
+The **OSRS RPI** below is a weighted inflation rate based on a default basket of 86 popular items.
 The metrics are calculated using average high prices from the period specified.
 
-Use the **Custom Calculator** page in the sidebar to build your own basket or analyse a single item. No skibidi toilets!
+Use the **Custom Calculator** page in the sidebar to build your own basket or analyze a single item.
 """)
 
 # --- Load Mapping Data ---
@@ -66,8 +66,7 @@ yoy_30_day_start = yoy_30_day_end.replace(year=yoy_30_day_end.year - 1)
 weekly_end = today
 weekly_start = today - timedelta(days=7)
 
-# 4. "Last Month" YoY Inflation (Full Preceding Month)
-# FIX: Use the full period average logic.
+# 4. "Last Month" YoY Inflation (Full Preceding Month) (PERIOD AVERAGE)
 last_month_end_date = get_last_day_of_previous_month(today)
 last_month_start_date = get_first_day_of_previous_month(today)
 
@@ -103,18 +102,15 @@ with st.spinner("Calculating current RPI metrics..."):
 
     # 1. 7-day YoY (Point-in-Time)
     rpi_yoy_7, exc_yoy_7 = calculate_metric("YoY (7-Day Point)", yoy_7_day_start, yoy_7_day_end)
-    all_metrics.append(("YoY (7-Day Point)", rpi_yoy_7, yoy_7_day_start, yoy_7_day_end))
-    all_exclusions["YoY (7-Day Point)"] = exc_yoy_7
+    all_metrics.append({"label": "YoY (7-Day Point)", "value": rpi_yoy_7, "start": yoy_7_day_start, "end": yoy_7_day_end, "exclusions": exc_yoy_7})
 
     # 2. 30-day YoY (Point-in-Time)
     rpi_yoy_30, exc_yoy_30 = calculate_metric("YoY (30-Day Point)", yoy_30_day_start, yoy_30_day_end)
-    all_metrics.append(("YoY (30-Day Point)", rpi_yoy_30, yoy_30_day_start, yoy_30_day_end))
-    all_exclusions["YoY (30-Day Point)"] = exc_yoy_30
+    all_metrics.append({"label": "YoY (30-Day Point)", "value": rpi_yoy_30, "start": yoy_30_day_start, "end": yoy_30_day_end, "exclusions": exc_yoy_30})
 
     # 3. Weekly Figure (MoM 7-Day) (Point-in-Time)
     rpi_weekly, exc_weekly = calculate_metric("MoM (Weekly Change)", weekly_start, weekly_end)
-    all_metrics.append(("MoM (Weekly Change)", rpi_weekly, weekly_start, weekly_end))
-    all_exclusions["MoM (Weekly Change)"] = exc_weekly
+    all_metrics.append({"label": "MoM (Weekly Change)", "value": rpi_weekly, "start": weekly_start, "end": weekly_end, "exclusions": exc_weekly})
 
     # 4. Last Month YoY (Period Average - Graph Match)
     rpi_last_month, exc_last_month = calculate_metric_period_avg(
@@ -122,41 +118,66 @@ with st.spinner("Calculating current RPI metrics..."):
         last_month_compare_start, last_month_compare_end, # Old period
         last_month_start_date, last_month_end_date      # New period
     )
-    all_metrics.append(("YoY (Last Full Month - Period Avg)", rpi_last_month, f"{last_month_compare_start} to {last_month_compare_end}", f"{last_month_start_date} to {last_month_end_date}"))
-    all_exclusions["YoY (Last Full Month - Period Avg)"] = exc_last_month
+    # Store period average metric with formatted date ranges
+    all_metrics.append({
+        "label": "YoY (Last Full Month Avg)",
+        "value": rpi_last_month,
+        "start": f"{last_month_compare_start} to {last_month_compare_end}",
+        "end": f"{last_month_start_date} to {last_month_end_date}",
+        "exclusions": exc_last_month
+    })
 
 
-# Display current RPI figures
-col_yoy, col_mom = st.columns(2)
+# Consolidate all exclusions
+for metric in all_metrics:
+    all_exclusions[metric['label']] = metric['exclusions']
 
-with col_yoy:
-    st.subheader("Year-over-Year Inflation (YoY)")
 
-    # Show 7-day and 30-day (Point-in-Time) YoY figures
-    st.markdown("##### Current Point-in-Time Comparison")
-    for label, value, start, end in all_metrics[:2]:
-        st.metric(
-            label=f"{label} ({start} to {end})",
-            value=f"{value:.2f}%" if value is not None else "N/A"
-        )
+# --- Display Current RPI Figures as Scorecards ---
+# Create 4 columns for the 4 key metrics
+col1, col2, col3, col4 = st.columns(4)
 
-    # Show Last Full Month (Period Average) YoY figure
-    st.markdown("##### Previous Month Inflation Figure")
-    label, value, start_old, end_new = all_metrics[3] # Index 3 is the Last Full Month metric
+# 1. YoY (7-Day Point)
+with col1:
+    m = all_metrics[0]
     st.metric(
-        label=f"YoY (Last Full Month Avg) ({start_old} to {end_new})",
-        value=f"{value:.2f}%" if value is not None else "N/A"
+        label="YoY (7-Day Point)",
+        value=f"{m['value']:.2f}%" if m['value'] is not None else "N/A",
+        delta=None, # Delta removed for clean scorecard look
+        help=f"Inflation from {m['start']} to {m['end']}"
     )
 
-with col_mom:
-    st.subheader("Current Market Change (MoM)")
-    # Show Weekly Change (MoM)
-    for label, value, start, end in all_metrics:
-        if "MoM" in label:
-            st.metric(
-                label=f"{label} ({start} to {end})",
-                value=f"{value:.2f}%" if value is not None else "N/A"
-            )
+# 2. YoY (30-Day Point)
+with col2:
+    m = all_metrics[1]
+    st.metric(
+        label="YoY (30-Day Point)",
+        value=f"{m['value']:.2f}%" if m['value'] is not None else "N/A",
+        delta=None,
+        help=f"Inflation from {m['start']} to {m['end']}"
+    )
+
+# 3. MoM (Weekly Change)
+with col3:
+    m = all_metrics[2]
+    # Calculate the weekly delta change from 7 days ago to today
+    st.metric(
+        label="MoM (Weekly Change)",
+        value=f"{m['value']:.2f}%" if m['value'] is not None else "N/A",
+        delta=None,
+        help=f"Change from {m['start']} to {m['end']}"
+    )
+
+# 4. YoY (Last Full Month Avg)
+with col4:
+    m = all_metrics[3]
+    # The help text now shows both the old and new period ranges
+    st.metric(
+        label="YoY (Last Full Month Avg)",
+        value=f"{m['value']:.2f}%" if m['value'] is not None else "N/A",
+        delta=None,
+        help=f"Average inflation across the full month of {last_month_end_date.strftime('%B')} compared to one year prior."
+    )
 
 
 # Display exclusions in a dedicated section
@@ -175,7 +196,7 @@ if all_excluded:
 
 # --- Historical RPI Chart ---
 st.header("2. Historical OSRS RPI Trend")
-st.markdown("*Chart figures represent the Year-over-Year inflation based on the average price across the entire preceding month.*")
+st.markdown("*Chart figures represent the Year-over-Year inflation based on the **average price** across the entire preceding month.*")
 with st.spinner("Generating full historical chart (This is cached)..."):
     history_df = calculate_monthly_rpi_dataframe(DEFAULT_RPI_BASKET, mapping_dict)
 
