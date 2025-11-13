@@ -1,204 +1,161 @@
 import streamlit as st
-import pandas as pd
 from datetime import datetime, timedelta
+from api_client import get_item_mapping
+from calculator import calculate_single_item_inflation, calculate_rpi
+import pandas as pd
 
-# Import your custom modules
-from api_client import get_item_mapping, get_price_history, find_item_id
-from calculator import get_item_price_on_date, calculate_inflation, calculate_rpi
-
-st.set_page_config(
-    page_title="Custom Inflation Calculator",
-    page_icon="🛠️",
-    layout="wide"
-)
-
-st.title("🛠️ Custom Inflation Calculator")
+st.set_page_config(page_title="Custom Calculator", page_icon="🎛️", layout="wide")
+st.title("🎛️ Custom Inflation Calculator")
 
 # --- Load Mapping Data ---
-# This is needed for all calculators on this page
-mapping = get_item_mapping()
-if not mapping:
-    st.error("Failed to load OSRS item database. Cannot proceed.", icon="🚨")
-    st.stop() # Stop execution of this page
+# This is loaded once and cached, so it's fast
+@st.cache_resource
+def load_mapping_data():
+    return get_item_mapping()
 
-# Get a clean list of item names for selectboxes
-item_names_list = sorted([item['name'] for item in mapping if 'name' in item])
+mapping_dict, item_names_list = load_mapping_data()
+
+if not mapping_dict or not item_names_list:
+    st.error("Failed to load OSRS item database. The API might be down. Please try again later.")
+    st.stop()
 
 
-# --- Mode Selection ---
-calc_mode = st.radio(
-    "Select Calculator Mode:",
-    ("Single Item", "Custom RPI Basket"),
-    horizontal=True,
-    key="calc_mode"
-)
+# --- UI Configuration ---
+col1, col2 = st.columns([1, 2]) # Ratio for inputs vs. results
 
-# --- Shared Date Inputs ---
-st.markdown("---")
-st.subheader("1. Select Timeframe")
-calc_type = st.radio(
-    "Select Timeframe:",
-    ("Default (Last Year)", "Custom Date Range", "Custom Duration from Today"),
-    horizontal=True,
-    key="calc_timeframe"
-)
-
-today = datetime.now().date()
-start_date = None
-end_date = today
-
-if calc_type == "Default (Last Year)":
-    start_date = today - timedelta(days=365)
-elif calc_type == "Custom Date Range":
-    col_date1, col_date2 = st.columns(2)
-    with col_date1:
-        start_date = st.date_input("Start Date", value=today - timedelta(days=365))
-    with col_date2:
-        end_date = st.date_input("End Date", value=today)
-elif calc_type == "Custom Duration from Today":
-    days_ago = st.number_input(
-        "Select Timeframe (Days Ago):", 
-        min_value=1, 
-        value=365,
-        help="Calculate from this many days ago to today."
+with col1:
+    st.subheader("1. Select Calculation Mode")
+    mode = st.radio(
+        "Mode:",
+        ("Single Item", "Custom RPI Basket"),
+        horizontal=True,
+        label_visibility="collapsed"
     )
-    start_date = today - timedelta(days=days_ago)
 
+    st.subheader("2. Select Timeframe")
+    today = datetime.now().date()
+    start_date = st.date_input("Start Date", value=today - timedelta(days=365))
+    end_date = st.date_input("End Date", value=today)
 
-# ==============================================================================
-# --- SINGLE ITEM CALCULATOR ---
-# ==============================================================================
-if calc_mode == "Single Item":
-    st.markdown("---")
-    st.subheader("2. Select Item")
-    
-    col_item, col_btn = st.columns([4, 1])
-    with col_item:
-        item_name = st.selectbox("Select an OSRS Item:", options=item_names_list, index=item_names_list.index("Shark"))
-    
-    with col_btn:
-        st.write(" ") # Spacer
-        run_single_calc = st.button("Calculate", type="primary", use_container_width=True, key="run_single")
+    # --- Mode-Specific UI ---
+    if mode == "Single Item":
+        st.subheader("3. Select Item")
+        item_name = st.selectbox(
+            "Item Name:",
+            options=item_names_list,
+            index=item_names_list.index("shark") # Default to 'shark'
+        )
 
-    if run_single_calc:
-        if start_date >= end_date:
-            st.error("Start date must be before the end date.")
-        else:
-            item_id = find_item_id(item_name, mapping)
-            if not item_id:
-                st.error(f"Could not find ID for '{item_name}'.")
+        if st.button("Calculate Single Item Inflation", type="primary", use_container_width=True):
+            if start_date >= end_date:
+                st.error("Start date must be before the end date.")
             else:
-                with st.spinner(f"Fetching price history for {item_name}..."):
-                    price_df = get_price_history(item_id)
-                
-                old_price_data = get_item_price_on_date(price_df, start_date)
-                new_price_data = get_item_price_on_date(price_df, end_date)
+                with col2:
+                    st.subheader(f"Results for: {item_name.title()}")
+                    with st.spinner(f"Fetching price history for {item_name}..."):
 
-                # --- Validation ---
-                if old_price_data is None:
-                    st.error(f"No price data found for '{item_name}' on or before {start_date}. The item may not have existed.", icon="⚠️")
-                elif new_price_data is None:
-                    st.error(f"No price data found for '{item_name}' on or before {end_date}.", icon="⚠️")
+                        # --- Run Single Item Calculation ---
+                        result = calculate_single_item_inflation(
+                            item_name,
+                            start_date,
+                            end_date,
+                            mapping_dict
+                        )
+
+                        if result.get('error'):
+                            st.error(result['error'])
+                        else:
+                            # --- Display Single Item Results ---
+                            st.metric(
+                                label=f"Inflation Rate ({result['actual_start_date']} to {result['actual_end_date']})",
+                                value=f"{result['inflation_rate']:.2f}%"
+                            )
+                            st.markdown("---")
+                            res_col1, res_col2 = st.columns(2)
+                            with res_col1:
+                                st.metric(label=f"Price on {result['actual_start_date']}", value=f"{int(result['old_price']):,} gp")
+                            with res_col2:
+                                st.metric(label=f"Price on {result['actual_end_date']}", value=f"{int(result['new_price']):,} gp")
+
+                            st.subheader("Price History Chart")
+                            chart_df = result['price_df']
+                            # Filter dataframe to the selected range for a cleaner chart
+                            chart_df = chart_df[chart_df.index >= pd.to_datetime(start_date)]
+                            chart_df = chart_df[chart_df.index <= pd.to_datetime(end_date)]
+                            st.line_chart(chart_df['avgHighPrice'])
+
+    elif mode == "Custom RPI Basket":
+        st.subheader("3. Build Custom Basket")
+        st.markdown("Add items and their weight. All weights will be normalized (e.g., 2 and 3 become 40% and 60%).")
+
+        if 'custom_basket' not in st.session_state:
+            st.session_state.custom_basket = {}
+
+        # --- UI for adding items to the basket ---
+        form_col1, form_col2, form_col3 = st.columns([3, 1, 1])
+        with form_col1:
+            new_item_name = st.selectbox(
+                "Item Name:",
+                options=item_names_list,
+                index=item_names_list.index("shark"),
+                key="basket_item_name"
+            )
+        with form_col2:
+            new_item_weight = st.number_input("Weight", min_value=1, value=1, key="basket_item_weight")
+
+        with form_col3:
+            st.markdown("##") # Spacer
+            if st.button("Add", use_container_width=True):
+                if new_item_name in st.session_state.custom_basket:
+                    st.warning(f"'{new_item_name}' is already in the basket. Use 'Remove' to change it.")
                 else:
-                    # --- Calculation & Display ---
-                    inflation_rate = calculate_inflation(old_price_data['price'], new_price_data['price'])
-                    
-                    st.markdown("---")
-                    st.subheader(f"Results for: {item_name}")
-                    
-                    st.metric(
-                        label=f"Inflation Rate ({old_price_data['actual_date']} to {new_price_data['actual_date']})",
-                        value=f"{inflation_rate:.2f}%"
-                    )
-                    
-                    res_col1, res_col2 = st.columns(2)
-                    with res_col1:
-                        st.metric(label=f"Price on {old_price_data['actual_date']}", value=f"{int(old_price_data['price']):,} gp")
-                    with res_col2:
-                        st.metric(label=f"Price on {new_price_data['actual_date']}", value=f"{int(new_price_data['price']):,} gp")
-                
-                    st.subheader("Price History Chart")
-                    chart_df = price_df[(price_df.index >= pd.to_datetime(start_date)) & 
-                                        (price_df.index <= pd.to_datetime(end_date))]
-                    st.line_chart(chart_df['avgHighPrice'])
+                    st.session_state.custom_basket[new_item_name] = new_item_weight
+                    st.rerun()
 
+        # --- Display the basket ---
+        if st.session_state.custom_basket:
+            st.markdown("---")
+            total_weight = sum(st.session_state.custom_basket.values())
 
-# ==============================================================================
-# --- CUSTOM RPI BASKET CALCULATOR ---
-# ==============================================================================
-elif calc_mode == "Custom RPI Basket":
-    st.markdown("---")
-    st.subheader("2. Build Your Basket")
-    
-    # Initialize session state for the basket
-    if "custom_basket_items" not in st.session_state:
-        st.session_state.custom_basket_items = ["Shark", "Prayer potion(4)"]
-
-    # --- Item Selection ---
-    st.session_state.custom_basket_items = st.multiselect(
-        "Select items for your basket:",
-        options=item_names_list,
-        default=st.session_state.custom_basket_items,
-        key="basket_multiselect"
-    )
-    
-    # --- Weight Assignment ---
-    final_basket = {} # This will hold {item_name: weight}
-    
-    if not st.session_state.custom_basket_items:
-        st.warning("Please add at least one item to your basket.")
-    else:
-        st.markdown("##### Assign Weights")
-        st.info("Assign a 'weight' to each item. A weight of 2 is twice as important as 1. The app will normalize these automatically.")
-        
-        total_weight = 0
-        # Dynamically create columns for weights
-        num_items = len(st.session_state.custom_basket_items)
-        # Handle case where many items are selected by chunking
-        max_cols = 5
-        for i in range(0, num_items, max_cols):
-            cols = st.columns(min(num_items - i, max_cols))
-            chunk_items = st.session_state.custom_basket_items[i:i + max_cols]
-
-            for j, item_name in enumerate(chunk_items):
-                with cols[j]:
-                    # Use item name in key to ensure widget is unique
-                    weight = st.number_input(f"{item_name}", min_value=1, value=1, key=f"weight_{item_name}")
-                    final_basket[item_name] = weight
-                    total_weight += weight
-
-        # Normalize weights for the calculator
-        if total_weight > 0:
-            normalized_basket = {item: (weight / total_weight) for item, weight in final_basket.items()}
+            for item, weight in st.session_state.custom_basket.items():
+                item_col1, item_col2, item_col3 = st.columns([4, 2, 1])
+                with item_col1:
+                    st.markdown(f"**{item.title()}**")
+                with item_col2:
+                    st.markdown(f"Weight: {weight} (`{weight/total_weight*100:.1f}%`)")
+                with item_col3:
+                    if st.button(f"Remove##{item}", use_container_width=True, key=f"del_{item}"):
+                        del st.session_state.custom_basket[item]
+                        st.rerun()
 
             st.markdown("---")
-            run_rpi_calc = st.button("Calculate RPI", type="primary", use_container_width=True, key="run_rpi")
-
-            if run_rpi_calc:
+            if st.button("Calculate Custom RPI", type="primary", use_container_width=True):
                 if start_date >= end_date:
                     st.error("Start date must be before the end date.")
                 else:
-                    with st.spinner("Calculating custom RPI..."):
-                        rpi_value, excluded = calculate_rpi(normalized_basket, start_date, end_date, mapping)
+                    with col2:
+                        st.subheader("Custom RPI Results")
 
-                    st.markdown("---")
-                    st.subheader("Custom RPI Result")
-
-                    if rpi_value is not None:
-                        st.metric(
-                            label=f"Weighted Inflation ({start_date} to {end_date})",
-                            value=f"{rpi_value:.2f}%"
+                        # --- Run RPI Calculation ---
+                        rpi_value, excluded = calculate_rpi(
+                            st.session_state.custom_basket,
+                            start_date,
+                            end_date,
+                            mapping_dict
                         )
 
-                        with st.expander("See your basket composition (normalized)"):
-                            st.json({k: f"{v*100:.2f}% weight" for k, v in normalized_basket.items()})
-
-                        if excluded:
-                            st.warning(f"Some items were excluded from this calculation: {', '.join(excluded)}")
-                    else:
-                        # THIS IS THE UPDATED ERROR BLOCK
-                        st.error("Could not calculate RPI. No valid data was found for any item in your basket for this period.", icon="🚨")
-                        if excluded:
-                            st.subheader("Reasons for failure:")
-                            st.warning(f"All items in your basket failed. Here are the reasons:\n\n* " + "\n* ".join(excluded))
-                        st.info("This. often happens if the API is temporarily down or if the selected date range is before any of the items existed.")
+                        if rpi_value is not None:
+                            st.metric(
+                                label=f"Weighted Inflation ({start_date} to {end_date})",
+                                value=f"{rpi_value:.2f}%"
+                            )
+                            if excluded:
+                                st.warning("Some items were excluded:")
+                                for item in excluded:
+                                    st.markdown(f"- {item}")
+                        else:
+                            st.error("Could not calculate RPI. No valid data was found for any item in the basket.")
+                            if excluded:
+                                st.subheader("Reasons for failure:")
+                                for item in excluded:
+                                    st.markdown(f"- {item}")
