@@ -60,7 +60,7 @@ DEFAULT_RPI_BASKET = {
     # --- 5. Consumables - Food (10.0%) ---
     "Shark": 0.03,
     "Monkfish": 0.02,
-    "Karambwan": 0.015,
+    "Cooked Karambwan": 0.015,
     "Manta Ray": 0.01,
     "Lobster": 0.007,
     "Swordfish": 0.005,
