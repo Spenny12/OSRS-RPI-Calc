@@ -1,9 +1,30 @@
-import { $, $$, esc, pct, gp, trendClass, initTheme, lineChart } from "./ui.js";
-import { BASKET_CATEGORIES } from "./lib/basket.js";
-import { toDay, formatDay, minusYears, todayDay } from "./lib/dates.js";
+import { $, $$, esc, pct, gp, trendClass, initTheme, lineChart } from "./ui.js?v=4";
+import { BASKET_CATEGORIES } from "./lib/basket.js?v=4";
+import { toDay, formatDay, minusYears, todayDay } from "./lib/dates.js?v=4";
 
+window.__appStarted = true;
 initTheme();
 $('[data-nav="home"]').setAttribute("aria-current", "page");
+
+// Primary source is our edge-cached endpoint; GitHub raw is a fallback if it is unavailable.
+const SOURCES = ["/api/rpi", "https://raw.githubusercontent.com/Spenny12/OSRS-RPI-Calc/data/index.json"];
+
+async function loadIndex() {
+  let lastErr;
+  for (const url of SOURCES) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data || !data.kpis) throw new Error("Unexpected data");
+      return data;
+    } catch (e) {
+      lastErr = e;
+      console.warn(`Index source failed: ${url}`, e);
+    }
+  }
+  throw lastErr;
+}
 
 const monthDay = (ym) => { const [y, m] = ym.split("-").map(Number); return Math.floor(Date.UTC(y, m, 0) / 86_400_000); }; // last day of month
 const monthLabel = (ym) => formatDay(monthDay(ym), { month: "long", year: "numeric" });
@@ -28,10 +49,7 @@ function setKpi(key, value, subHtml) {
 async function init() {
   let data;
   try {
-    const res = await fetch("/api/rpi");
-    if (!res.ok) throw new Error(res.status);
-    data = await res.json();
-    if (!data.kpis) throw new Error("bad data");
+    data = await loadIndex();
   } catch {
     return showError("Couldn't load the index right now.");
   }

@@ -6,12 +6,12 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
   <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=gambetta@500,700&display=swap">
-  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/styles.css?v=4">
   <script>document.documentElement.dataset.theme=(function(){try{return localStorage.getItem("theme")}catch(e){}})()||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");</script>
   <script src="/assets/vendor/chart.umd.min.js" defer></script>
   <title>OSRS RPI · Old School RuneScape Inflation Tracker</title>
   <meta name="description" content="A weighted inflation index (RPI) for Old School RuneScape, built from Grand Exchange prices for a basket of 99 popular items.">
-  <script type="module" src="/assets/js/home.js"></script>
+  <script type="module" src="/assets/js/home.js?v=4"></script>
 </head>
 <body data-page="home">
 <header class="site-header">
@@ -166,5 +166,13 @@
     <p>Price data: Grand Exchange guide prices via the <a href="https://api.weirdgloop.org/" rel="noopener">Weird Gloop API</a>; item list from the <a href="https://prices.runescape.wiki/" rel="noopener">OSRS Wiki real-time prices API</a>. Source on <a href="https://github.com/Spenny12/OSRS-RPI-Calc" rel="noopener">GitHub</a>.</p>
   </div>
 </footer>
+<script id="boot-watchdog">
+  setTimeout(function () {
+    if (window.__appStarted) return;
+    var p = document.getElementById("load-progress") || document.getElementById("result");
+    var msg = '<p class="alert">The page didn't finish loading. <button class="btn small" type="button" onclick="location.reload(true)">Reload</button></p>';
+    if (p) { p.hidden = false; p.innerHTML = msg; }
+  }, 20000);
+</script>
 </body>
 </html>

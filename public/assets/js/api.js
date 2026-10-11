@@ -1,5 +1,5 @@
 // Browser data layer: talks to the Pages Functions under /api.
-import { PriceSeries } from "./lib/rpi.js";
+import { PriceSeries } from "./lib/rpi.js?v=4";
 
 let mappingPromise = null;
 const seriesCache = new Map(); // id -> Promise<PriceSeries|null>

@@ -1,9 +1,10 @@
-import { $, $$, esc, pct, gp, trendClass, initTheme, lineChart, store } from "./ui.js";
-import { loadMapping, loadSeries, loadBasketSeries } from "./api.js";
-import { DEFAULT_BASKET, BASKET_CATEGORIES } from "./lib/basket.js";
-import { pointRpi, singleItem } from "./lib/rpi.js";
-import { todayDay, toDay, fromDay, formatDay } from "./lib/dates.js";
+import { $, $$, esc, pct, gp, trendClass, initTheme, lineChart, store } from "./ui.js?v=4";
+import { loadMapping, loadSeries, loadBasketSeries } from "./api.js?v=4";
+import { DEFAULT_BASKET, BASKET_CATEGORIES } from "./lib/basket.js?v=4";
+import { pointRpi, singleItem } from "./lib/rpi.js?v=4";
+import { todayDay, toDay, fromDay, formatDay } from "./lib/dates.js?v=4";
 
+window.__appStarted = true;
 initTheme();
 $('[data-nav="custom"]').setAttribute("aria-current", "page");
 

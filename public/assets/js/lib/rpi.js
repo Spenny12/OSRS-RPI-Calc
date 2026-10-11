@@ -1,5 +1,5 @@
 // Pure RPI maths, no DOM. Mirrors the original Python calculator.py logic.
-import { minusYears, previousMonth, parts, dayOf } from "./dates.js";
+import { minusYears, previousMonth, parts, dayOf } from "./dates.js?v=4";
 
 /** A gap-filled daily price series. */
 export class PriceSeries {

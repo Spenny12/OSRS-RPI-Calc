@@ -50,7 +50,7 @@ export function initTheme() {
 export const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // ---------- charts ----------
-import { formatDay } from "./lib/dates.js";
+import { formatDay } from "./lib/dates.js?v=4";
 
 /**
  * Line chart with a numeric x axis of day numbers.
