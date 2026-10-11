@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pick, moodSentence, categorySentence, breadthSentence, standoutSentence, atPhrase, writeIntro, STANDOUT_DAYS } from "../scripts/lib/intro.mjs";
+import { pick, moodSentence, categorySentence, breadthSentence, standoutSentence, trendSentence, moversSentence, atPhrase, writeIntro, STANDOUT_DAYS, MAX_SENTENCES } from "../scripts/lib/intro.mjs";
 import { categoryChanges, breadth, buildEmbed } from "../scripts/lib/recap.mjs";
 import { toDay } from "../public/assets/js/lib/dates.js";
 
@@ -50,7 +50,10 @@ test("category sentence needs a 3% move and names the right categories", () => {
   assert.ok(onlyUp.includes("Runes") && !onlyUp.includes("Herbs"));
   const onlyDown = categorySentence(cats(1, -5), SEED);
   assert.ok(onlyDown.includes("Herbs") && !onlyDown.includes("Runes"));
-  assert.equal(categorySentence(cats(2.9, -2.9), SEED), null);
+  const mild = categorySentence(cats(2.9, -2.9), SEED);
+  assert.ok(mild.includes("Runes") && mild.includes("Herbs") && mild.includes("+2.9%") && mild.includes("−2.9%"), "just under the standout bar still gets a milder mention");
+  assert.equal(categorySentence(cats(0.4, -0.4), SEED), null, "differences this small aren't worth a sentence");
+  assert.ok(categorySentence([{ name: "Solo", change: 1 }], SEED).includes("Solo"));
   assert.equal(categorySentence([], SEED), null);
 });
 
@@ -78,27 +81,55 @@ test("standout picks the longest look-back of a year or more", () => {
   assert.equal(atPhrase("Its lowest price since release"), "at its lowest price since release");
 });
 
+test("trend sentence spots streaks, turnarounds, breathers and big moves", () => {
+  const t = (value, previous) => trendSentence({ value }, previous, SEED);
+  assert.match(t(1.2, [0.8, 0.5, -1]), /3 weeks/, "this week plus two before it");
+  assert.match(t(-1.2, [-0.8, -0.5, -0.4, 0.2]), /4 weeks/);
+  assert.match(t(1.2, [-0.9, 0.5]), /0\.90%/, "turnaround quotes last week's figure");
+  assert.match(t(-2.5, [0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1]), /biggest weekly fall in at least 8 weeks/);
+  assert.equal(t(1.5, [0.2, 0.1]), null, "an ordinary week adds nothing");
+  assert.match(t(0.1, [3.2, 0.1]), /3\.20%/, "a calm week after a big one is called a breather");
+  assert.equal(t(0.1, [0.2]), null);
+  assert.equal(t(1, []), null);
+  assert.equal(t(1, [null, null]), null);
+  assert.equal(trendSentence(null, [1], SEED), null);
+});
+
+test("movers sentence names the best riser and worst faller", () => {
+  const mv = (name, change) => ({ name, change });
+  const both = moversSentence([mv("Big drop", -23), mv("Big rise", 16), mv("Small rise", 9), mv("Small drop", -8)], SEED);
+  assert.ok(both.includes("Big rise") && both.includes("+16.0%") && both.includes("Big drop") && both.includes("−23.0%"));
+  assert.ok(!both.includes("Small"));
+  const onlyUp = moversSentence([mv("Solo", 12)], SEED);
+  assert.ok(onlyUp.includes("Solo") && onlyUp.includes("+12.0%"));
+  assert.equal(moversSentence([], SEED), null);
+  assert.equal(moversSentence(undefined, SEED), null);
+});
+
+const STAR = { name: "Dragon bones", change: -23, context: "Lowest since March 2021 (5.6 years ago)", lookbackDays: 2045 };
+const RISER = { name: "Nature rune", change: 16, context: null, lookbackDays: 0 };
+const CATS = [{ name: "Runes & magic supplies", change: 12.3 }, { name: "Mid", change: 0.4 }, { name: "Herblore ingredients", change: -8.1 }];
 const SCENARIOS = {
-  rich: {
-    basket: { value: 1.84 },
-    breadth: { up: 410, down: 180, flat: 58 },
-    categories: [{ name: "Runes & magic supplies", change: 12.3 }, { name: "Mid", change: 0.4 }, { name: "Herblore ingredients", change: -8.1 }],
-    movers: [{ name: "Dragon bones", change: -23, context: "Lowest since March 2021 (5.6 years ago)", lookbackDays: 2045 }, { name: "Nature rune", change: 16, context: null, lookbackDays: 0 }],
-  },
-  quiet: { basket: { value: -0.04 }, breadth: { up: 200, down: 210, flat: 238 }, categories: [{ name: "A", change: 1 }, { name: "B", change: -1 }], movers: [] },
-  noBasket: { basket: null, breadth: { up: 1, down: 1, flat: 1 }, categories: [], movers: [] },
-  empty: { basket: null, breadth: null, categories: [], movers: [] },
+  rich: { basket: { value: 1.84 }, breadth: { up: 410, down: 180, flat: 58 }, categories: CATS, movers: [STAR, RISER], previous: [-0.5, 0.4, 1.1, -0.2, 0.9, 0.3, -1.4, 0.7, 0.2, -0.6, 0.1, 0.8] },
+  streak: { basket: { value: 1.5 }, breadth: { up: 410, down: 180, flat: 58 }, categories: CATS, movers: [STAR, RISER], previous: [0.9, 0.6, 0.4, -0.1, 0.2, 0.3, 0.1, 0.1, 0.2, 0.1, 0.2, 0.1] },
+  quiet: { basket: { value: -0.04 }, breadth: { up: 200, down: 210, flat: 238 }, categories: [{ name: "A", change: 1 }, { name: "B", change: -1 }], movers: [], previous: [0.2, -0.1, 0.3, 0.1] },
+  noBasket: { basket: null, breadth: { up: 1, down: 1, flat: 1 }, categories: [], movers: [], previous: [] },
+  empty: { basket: null, breadth: null, categories: [], movers: [], previous: [] },
 };
 
-test("writeIntro is 1-3 sentences, never too long, and varies by week", () => {
+const sentences = (t) => (t.match(/[.!?](\s|$)/g) || []).length;
+
+test("writeIntro is a short paragraph, within the cap, and varies by week", () => {
   for (const [name, week] of Object.entries(SCENARIOS)) {
     const texts = new Set();
     for (let w = 0; w < 120; w++) {
       const t = writeIntro(week, SEED + 7 * w);
       if (name === "empty") { assert.equal(t, ""); continue; }
-      assert.ok(t.length > 20 && t.length <= 500, `${name} week ${w}: ${t.length} chars`);
-      assert.ok((t.match(/[.!?](\s|$)/g) || []).length <= 3, `${name}: at most 3 sentences`);
+      assert.ok(t.length > 20 && t.length <= 700, `${name} week ${w}: ${t.length} chars`);
+      assert.ok(sentences(t) <= MAX_SENTENCES, `${name}: at most ${MAX_SENTENCES} sentences`);
       assert.ok(t.trim() === t && !/\s{2,}/.test(t), "tidy whitespace");
+      if (name === "rich" || name === "streak") assert.ok(sentences(t) >= 4, `${name}: a full week gets a proper paragraph, got ${sentences(t)}: ${t}`);
+      if (name === "quiet") assert.ok(sentences(t) >= 3, `${name}: even a quiet week gets a few sentences: ${t}`);
       texts.add(t);
     }
     if (name !== "empty") assert.ok(texts.size > (name === "noBasket" ? 1 : 3), `${name}: wording rotates (got ${texts.size} variants)`);
@@ -106,11 +137,26 @@ test("writeIntro is 1-3 sentences, never too long, and varies by week", () => {
   assert.equal(writeIntro(SCENARIOS.rich, SEED), writeIntro(SCENARIOS.rich, SEED), "same week, same text");
 });
 
+test("when there is more to say than fits, the least interesting parts are dropped first", () => {
+  const t = writeIntro(SCENARIOS.streak, SEED); // trend + mood + breadth + category + movers + standout = 6
+  assert.ok(sentences(t) <= MAX_SENTENCES);
+  assert.match(t, /weeks/, "the streak is kept");
+  assert.ok(!/of 648/.test(t) && !/410 of/.test(t), "the breadth line goes first");
+  assert.ok(t.includes("Dragon bones") && t.includes("Runes & magic supplies"), "standout and category are kept");
+});
+
 test("every percentage in the intro comes from the data", () => {
-  const w = SCENARIOS.rich;
-  const allowed = new Set(["1.84%", "12.3%", "8.1%", "23.0%", "16.0%"]);
-  for (let i = 0; i < 120; i++) {
-    for (const p of writeIntro(w, SEED + 7 * i).match(/\d+(?:\.\d+)?%/g) || []) assert.ok(allowed.has(p), `unexpected figure ${p}`);
+  const f = (v, d) => `${Math.abs(v).toFixed(d)}%`;
+  for (const [name, w] of Object.entries(SCENARIOS)) {
+    const allowed = new Set([
+      w.basket?.value != null && f(w.basket.value, 2),
+      w.previous[0] != null && f(w.previous[0], 2),
+      ...w.categories.map((c) => f(c.change, 1)),
+      ...w.movers.map((m) => f(m.change, 1)),
+    ].filter(Boolean));
+    for (let i = 0; i < 120; i++) {
+      for (const p of writeIntro(w, SEED + 7 * i).match(/\d+(?:\.\d+)?%/g) || []) assert.ok(allowed.has(p), `${name}: unexpected figure ${p}`);
+    }
   }
 });
 

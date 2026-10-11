@@ -10,8 +10,12 @@ import { fmtPct } from "./recap.mjs";
 export const FLAT_BELOW = 0.3;
 /** Weekly basket moves at least this big (%) count as "big". */
 export const BIG_FROM = 2;
-/** A category must move at least this much (%) to be called out. */
+/** A category must move at least this much (%) to be called out as a standout. */
 export const CATEGORY_CALLOUT = 3;
+/** Below the standout bar, a category still gets a milder mention if it moved more than this (%). */
+export const CATEGORY_MILD = 0.5;
+/** The intro never runs longer than this many sentences. */
+export const MAX_SENTENCES = 5;
 /** A look-back at least this long (days) earns a "special mention". */
 export const STANDOUT_DAYS = 365;
 
@@ -91,7 +95,89 @@ export function categorySentence(categories, seed) {
       `${bottom.name} was the category to wince at this week (${fmtPct(bottom.change)}).`,
     ]);
   }
+  // Nothing dramatic: still say who was ahead and who lagged, if there's any real difference.
+  if (categories.length > 1 && top.change > CATEGORY_MILD && bottom.change < -CATEGORY_MILD) {
+    return s([
+      `By category, ${top.name} edged ahead (${fmtPct(top.change)}) while ${bottom.name} lagged (${fmtPct(bottom.change)}).`,
+      `Category-wise, ${top.name} (${fmtPct(top.change)}) was on top and ${bottom.name} (${fmtPct(bottom.change)}) at the bottom.`,
+    ]);
+  }
+  if (top.change > CATEGORY_MILD) {
+    return s([
+      `${top.name} was the pick of the categories (${fmtPct(top.change)}).`,
+      `By category, ${top.name} did best (${fmtPct(top.change)}).`,
+    ]);
+  }
+  if (categories.length > 1 && bottom.change < -CATEGORY_MILD) {
+    return s([
+      `${bottom.name} was the weakest category (${fmtPct(bottom.change)}).`,
+      `By category, ${bottom.name} fared worst (${fmtPct(bottom.change)}).`,
+    ]);
+  }
   return null;
+}
+
+/**
+ * How this week compares with the recent run of weeks: a streak, a turnaround,
+ * or the biggest move in a while.
+ * @param {{value:number|null}|null} basket this week
+ * @param {Array<number|null>} previous earlier weekly basket changes (%), most recent first
+ */
+export function trendSentence(basket, previous, seed) {
+  if (!basket || basket.value == null || !previous?.length) return null;
+  const v = basket.value;
+  const notable = (x) => x != null && Math.abs(x) >= FLAT_BELOW;
+  const last = previous[0];
+  const s = (opts) => pick(opts, seed, 5);
+  if (notable(v)) {
+    const dir = Math.sign(v);
+    let run = 1;
+    for (const p of previous) {
+      if (notable(p) && Math.sign(p) === dir) run++;
+      else break;
+    }
+    if (run >= 3) {
+      return s([`That makes ${run} weeks of ${v > 0 ? "rises" : "falls"} in a row.`, `${run} weeks running now of ${v > 0 ? "rising" : "falling"} prices.`]);
+    }
+    if (notable(last) && Math.sign(last) !== dir) {
+      return s([
+        `That's a turnaround from last week, when the basket ${last > 0 ? "rose" : "fell"} ${abs(last, 2)}.`,
+        `Last week went the other way, with the basket ${last > 0 ? "up" : "down"} ${abs(last, 2)}.`,
+      ]);
+    }
+    const beaten = previous.some((p) => notable(p) && Math.sign(p) === dir && Math.abs(p) >= Math.abs(v));
+    if (!beaten && Math.abs(v) >= 1 && previous.length >= 8) {
+      return `That's the biggest weekly ${v > 0 ? "rise" : "fall"} in at least ${previous.length} weeks.`;
+    }
+    return null;
+  }
+  if (notable(last) && Math.abs(last) >= BIG_FROM) {
+    return s([
+      `A breather after last week, when the basket ${last > 0 ? "rose" : "fell"} ${abs(last, 2)}.`,
+      `Things calmed down after last week's ${last > 0 ? "rise" : "fall"} of ${abs(last, 2)}.`,
+    ]);
+  }
+  return null;
+}
+
+/** The week's best riser and worst faller at item level. `movers` is the list shown in the post. */
+export function moversSentence(movers, seed) {
+  const up = (movers || []).filter((m) => m.change > 0).sort((a, b) => b.change - a.change)[0];
+  const down = (movers || []).filter((m) => m.change < 0).sort((a, b) => a.change - b.change)[0];
+  const s = (opts) => pick(opts, seed, 6);
+  if (up && down) {
+    return s([
+      `At item level, ${up.name} led the risers (${fmtPct(up.change)}) and ${down.name} the fallers (${fmtPct(down.change)}).`,
+      `Item by item, ${up.name} climbed furthest (${fmtPct(up.change)}) while ${down.name} dropped furthest (${fmtPct(down.change)}).`,
+      `The biggest swings belonged to ${up.name} (${fmtPct(up.change)}) and ${down.name} (${fmtPct(down.change)}).`,
+    ]);
+  }
+  const one = up || down;
+  if (!one) return null;
+  return s([
+    `${one.name} made the biggest splash at item level (${fmtPct(one.change)}).`,
+    `At item level, ${one.name} (${fmtPct(one.change)}) had the week's biggest swing.`,
+  ]);
 }
 
 export function breadthSentence(breadth, seed) {
@@ -140,14 +226,23 @@ export function standoutSentence(movers, seed) {
  * @param {{basket:{value:number|null}|null, breadth:{up:number,down:number,flat:number}|null,
  *          categories:Array<{name:string,change:number}>, movers:Array<{name:string,change:number,context:string|null,lookbackDays?:number}>}} week
  * @param {number} seed any integer that changes weekly (the week's end day number works)
- * @returns {string} 1 to 3 sentences, or "" if there is nothing to say
+ * @returns {string} up to MAX_SENTENCES sentences, or "" if there is nothing to say
  */
-export function writeIntro({ basket, breadth, categories, movers }, seed) {
-  const parts = [moodSentence(basket, seed)];
-  const cat = categorySentence(categories, seed);
-  const star = standoutSentence(movers, seed);
-  if (cat) parts.push(cat);
-  if (star) parts.push(star);
-  if (parts.filter(Boolean).length < 2) parts.push(breadthSentence(breadth, seed));
-  return parts.filter(Boolean).slice(0, 3).join(" ");
+export function writeIntro({ basket, breadth, categories, movers, previous }, seed) {
+  const parts = {
+    mood: moodSentence(basket, seed),
+    trend: trendSentence(basket, previous, seed),
+    breadth: breadthSentence(breadth, seed),
+    category: categorySentence(categories, seed),
+    movers: moversSentence(movers, seed),
+    star: standoutSentence(movers, seed),
+  };
+  const order = ["mood", "trend", "breadth", "category", "movers", "star"]; // reading order
+  const present = () => order.filter((k) => parts[k]);
+  // Over the cap? Drop the least interesting parts first.
+  for (const k of ["breadth", "movers", "trend"]) {
+    if (present().length <= MAX_SENTENCES) break;
+    parts[k] = null;
+  }
+  return present().map((k) => parts[k]).join(" ");
 }
