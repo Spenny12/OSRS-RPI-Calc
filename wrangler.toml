@@ -1,0 +1,6 @@
+name = "osrs-rpi-calc"
+compatibility_date = "2026-04-01"
+pages_build_output_dir = "./public"
+
+[vars]
+USER_AGENT = "OSRS-RPI-Calc (Cloudflare Pages) - Discord: spenny12_"
