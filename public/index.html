@@ -170,7 +170,7 @@
   setTimeout(function () {
     if (window.__appStarted) return;
     var p = document.getElementById("load-progress") || document.getElementById("result");
-    var msg = '<p class="alert">The page didn't finish loading. <button class="btn small" type="button" onclick="location.reload(true)">Reload</button></p>';
+    var msg = '<p class="alert">The page did not finish loading. <button class="btn small" type="button" onclick="location.reload()">Reload</button></p>';
     if (p) { p.hidden = false; p.innerHTML = msg; }
   }, 20000);
 </script>
