@@ -1,0 +1,46 @@
+name: Weekly Discord recap
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC (08:00 UK summer time, 07:00 in winter)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: print the message in the log instead of posting it"
+        type: boolean
+        default: true
+      date:
+        description: "Pretend today is this date (YYYY-MM-DD) to back-test a past week. Leave blank for today."
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-discord
+  cancel-in-progress: false
+
+jobs:
+  recap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build and post the recap
+        # Inputs go through env vars (not inlined into the script) so they can't inject shell.
+        # Scheduled runs have no inputs, so they post for real; manual runs default to a dry run.
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_DATE: ${{ inputs.date }}
+        run: |
+          args=()
+          if [ "$INPUT_DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          if [ -n "$INPUT_DATE" ]; then args+=(--date "$INPUT_DATE"); fi
+          node scripts/weekly-recap.mjs "${args[@]}"

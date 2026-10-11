@@ -58,6 +58,9 @@ functions/api/
   history/[id].js           GET /api/history/:id  -> {id, start, prices[]} (custom calculator)
 scripts/
   build-index.mjs           builds index.json (run daily by .github/workflows/build-index.yml)
+  weekly-recap.mjs          posts the weekly Discord recap (run Mondays by .github/workflows/weekly-discord.yml)
+  lib/history.mjs           shared: downloads GE histories for the basket
+  lib/recap.mjs             recap logic: week window, movers, "lowest since", Discord embed
   select_basket.py          regenerates public/assets/js/lib/basket.js
   categories.py             category rules, exclusions and shares
 tests/                      node:test unit + parity tests
@@ -93,6 +96,19 @@ Optional environment variables: `USER_AGENT` (User-Agent sent to the upstream AP
 ### Daily index build
 
 `.github/workflows/build-index.yml` runs every day at 06:30 UTC (and on demand from the Actions tab). It fetches every basket item's history, builds `index.json` and force-pushes it as a single commit to the `data` branch. **Scheduled workflows only run from the default branch, so this starts once this code is on `main`.** You can build it locally with `node scripts/build-index.mjs index.json`.
+
+### Weekly Discord recap
+
+`.github/workflows/weekly-discord.yml` posts the week's biggest price moves to a Discord channel every Monday at 07:00 UTC (08:00 UK summer time, 07:00 in winter).
+
+**Setup**
+1. In Discord: Channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL.
+2. In GitHub: Settings → Secrets and variables → Actions → New repository secret, named `DISCORD_WEBHOOK_URL`.
+3. Test it from the Actions tab: *Weekly Discord recap* → Run workflow. It defaults to **dry run**, which prints the message in the log without posting. Untick *dry_run* to post for real (use a private test channel first).
+
+**What it reports.** The last complete week, measured as the guide price on the most recent Sunday against the Sunday before, so a Monday run always covers the week that just ended. It lists up to 5 items with the biggest raw % moves (at least 5%, items under 1,000 gp skipped, 10× price jumps treated as glitches), aiming for two risers and two fallers, one per item family (so four doses of one potion don't fill the list). Each shows how long it has been since the price was this low or high ("Lowest since March 2021 (5.6 years ago)") when that reaches back at least 60 days, and the post opens with the basket index's move over the same week.
+
+The message logic lives in `scripts/lib/recap.mjs`; run it locally with `node scripts/weekly-recap.mjs --dry-run` (add `--date YYYY-MM-DD` to back-test a past week, `--cache DIR` to reuse downloaded histories). The run fails, rather than posting stale numbers, if price data doesn't yet reach the end of the week.
 
 ## Changes from the original Streamlit version
 
