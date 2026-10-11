@@ -61,6 +61,7 @@ scripts/
   weekly-recap.mjs          posts the weekly Discord recap (run Mondays by .github/workflows/weekly-discord.yml)
   lib/history.mjs           shared: downloads GE histories for the basket
   lib/recap.mjs             recap logic: week window, movers, "lowest since", Discord embed
+  lib/intro.mjs             the written intro (rule-based phrasings, no external service)
   select_basket.py          regenerates public/assets/js/lib/basket.js
   categories.py             category rules, exclusions and shares
 tests/                      node:test unit + parity tests
@@ -99,7 +100,7 @@ Optional environment variables: `USER_AGENT` (User-Agent sent to the upstream AP
 
 ### Weekly Discord recap
 
-`.github/workflows/weekly-discord.yml` posts the week's biggest price moves to a Discord channel every Monday at 07:00 UTC (08:00 UK summer time, 07:00 in winter).
+`.github/workflows/weekly-discord.yml` posts the week's biggest price moves to a Discord channel every Monday at 09:00 UK time (the workflow sets `timezone: Europe/London`, so this holds through the BST/GMT changes). GitHub can start scheduled runs a few minutes late.
 
 **Setup**
 1. In Discord: Channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL.
@@ -107,6 +108,8 @@ Optional environment variables: `USER_AGENT` (User-Agent sent to the upstream AP
 3. Test it from the Actions tab: *Weekly Discord recap* → Run workflow. It defaults to **dry run**, which prints the message in the log without posting. Untick *dry_run* to post for real (use a private test channel first).
 
 **What it reports.** The last complete week, measured as the guide price on the most recent Sunday against the Sunday before, so a Monday run always covers the week that just ended. It lists up to 5 items with the biggest raw % moves (at least 5%, items under 1,000 gp skipped, 10× price jumps treated as glitches), aiming for two risers and two fallers, one per item family (so four doses of one potion don't fill the list). Each shows how long it has been since the price was this low or high ("Lowest since March 2021 (5.6 years ago)") when that reaches back at least 60 days, and the post opens with the basket index's move over the same week.
+
+**The written intro.** A couple of sentences of light commentary sit at the top, written by `scripts/lib/intro.mjs` from the week's numbers: the basket's mood, any category that moved 3% or more, and a "special mention" for an item at a year-plus high or low. It is plain code, not an AI service, so it is free, needs no API key and only ever states what the data shows (it never guesses why prices moved). The wording rotates week to week; add or reword phrasings in that file to taste, or run with `--no-intro` for stats only.
 
 The message logic lives in `scripts/lib/recap.mjs`; run it locally with `node scripts/weekly-recap.mjs --dry-run` (add `--date YYYY-MM-DD` to back-test a past week, `--cache DIR` to reuse downloaded histories). The run fails, rather than posting stale numbers, if price data doesn't yet reach the end of the week.
 
