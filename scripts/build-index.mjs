@@ -8,9 +8,8 @@
 // --cache DIR reads/writes raw history JSON from DIR (handy for local runs).
 
 import fs from "node:fs";
-import path from "node:path";
-import { compactHistory } from "../public/assets/js/lib/compact.js";
-import { PriceSeries, withBurnIn, pointRpi, periodRpi, lastMonthYoY, monthlyHistory } from "../public/assets/js/lib/rpi.js";
+import { loadBasketSeries } from "./lib/history.mjs";
+import { pointRpi, periodRpi, lastMonthYoY, monthlyHistory } from "../public/assets/js/lib/rpi.js";
 import { DEFAULT_BASKET, BASKET_CATEGORIES, ITEM_ID, ITEM_CATEGORY } from "../public/assets/js/lib/basket.js";
 import { todayDay, minusYears, previousMonth, parts, dayOf, fromDay } from "../public/assets/js/lib/dates.js";
 
@@ -18,49 +17,9 @@ const args = process.argv.slice(2);
 const outFile = args.find((a) => !a.startsWith("--") && args[args.indexOf(a) - 1] !== "--cache") || "index.json";
 const cacheDir = args.includes("--cache") ? args[args.indexOf("--cache") + 1] : null;
 const UA = process.env.USER_AGENT || "OSRS-RPI-Calc index builder (github.com/Spenny12/OSRS-RPI-Calc) - Discord: spenny12_";
-const CONCURRENCY = 4;
 
-async function fetchHistory(id) {
-  const cached = cacheDir && path.join(cacheDir, `${id}.json`);
-  if (cached && fs.existsSync(cached)) return JSON.parse(fs.readFileSync(cached, "utf8"));
-  let lastErr;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      const res = await fetch(`https://api.weirdgloop.org/exchange/history/osrs/all?id=${id}`, {
-        headers: { "User-Agent": UA, Accept: "application/json" },
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const points = (json[String(id)] || []).map((p) => ({ price: p.price, timestamp: p.timestamp }));
-      if (cached) fs.writeFileSync(cached, JSON.stringify(points));
-      return points;
-    } catch (e) {
-      lastErr = e;
-      await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt));
-    }
-  }
-  console.warn(`! ${id}: ${lastErr}`);
-  return null;
-}
-
-async function loadAll() {
-  const names = Object.keys(DEFAULT_BASKET);
-  const series = new Map();
-  let i = 0, done = 0;
-  async function worker() {
-    while (i < names.length) {
-      const name = names[i++];
-      const pts = await fetchHistory(ITEM_ID[name]);
-      const c = pts && compactHistory(pts);
-      series.set(name, c ? withBurnIn(new PriceSeries(c)) : null);
-      if (++done % 50 === 0) console.log(`  ${done}/${names.length}`);
-    }
-  }
-  if (cacheDir) fs.mkdirSync(cacheDir, { recursive: true });
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-  return (n) => series.get(n) ?? null;
-}
+const loadAll = () =>
+  loadBasketSeries({ names: Object.keys(DEFAULT_BASKET), idOf: (n) => ITEM_ID[n], cacheDir, userAgent: UA, log: console.log });
 
 const r2 = (v, d = 4) => (v == null ? null : Math.round(v * 10 ** d) / 10 ** d);
 const slimExcl = (list) => list.map((e) => [e.name, e.reason]);
