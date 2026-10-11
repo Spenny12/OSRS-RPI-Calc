@@ -1,0 +1,15 @@
+{
+  "name": "osrs-rpi-calc",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OSRS inflation (RPI) tracker for Cloudflare Pages",
+  "scripts": {
+    "dev": "wrangler pages dev",
+    "deploy": "wrangler pages deploy",
+    "test": "node --test tests/"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}
