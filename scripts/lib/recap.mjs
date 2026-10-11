@@ -111,6 +111,39 @@ export function selectMovers(moves, { max = MAX_MOVERS, perSide = PER_SIDE, minM
   return kept.filter((m) => chosen.has(m)).slice(0, max);
 }
 
+// ---------- week summaries (context for the written intro) ----------
+
+/**
+ * Weighted average weekly change per basket category.
+ * @param {Array<{name:string, weight:number, change:number}>} rows items from pointRpi()
+ * @param {Record<string,string>} categoryOf item name -> category name
+ * @returns {Array<{name:string, change:number, items:number}>} sorted from biggest riser to biggest faller
+ */
+export function categoryChanges(rows, categoryOf) {
+  const by = new Map();
+  for (const r of rows) {
+    const c = categoryOf[r.name];
+    if (!c) continue;
+    const b = by.get(c) || { w: 0, wc: 0, n: 0 };
+    b.w += r.weight;
+    b.wc += r.weight * r.change;
+    b.n += 1;
+    by.set(c, b);
+  }
+  return [...by].map(([name, b]) => ({ name, change: b.wc / b.w, items: b.n })).sort((a, b) => b.change - a.change);
+}
+
+/** How widespread the week's movement was: items up, down, or within +/- `flatBand` %. */
+export function breadth(rows, flatBand = 0.5) {
+  let up = 0, down = 0, flat = 0;
+  for (const r of rows) {
+    if (r.change > flatBand) up++;
+    else if (r.change < -flatBand) down++;
+    else flat++;
+  }
+  return { up, down, flat };
+}
+
 // ---------- formatting ----------
 
 export function fmtPct(v, digits = 1) {
@@ -138,8 +171,9 @@ export function weekLabel(win) {
  * @param {{window:{start:number,end:number}, movers:Array<{name:string,change:number,oldPrice:number,newPrice:number,context:string|null}>,
  *          basket:{value:number|null, items:number}|null, siteUrl?:string}} r
  */
-export function buildEmbed({ window: win, movers, basket, siteUrl }) {
+export function buildEmbed({ window: win, movers, basket, siteUrl, commentary }) {
   const lines = [];
+  if (commentary) lines.push(escapeMd(commentary), "");
   if (basket && basket.value != null) {
     lines.push(`**Basket index:** ${fmtPct(basket.value, 2)} on the week (${basket.items} items)`, "");
   }

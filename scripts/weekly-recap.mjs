@@ -8,14 +8,16 @@
 //   --dry-run     print the message instead of posting it (no webhook needed)
 //   --date        pretend today is this date (to back-test a past week)
 //   --cache DIR   read/write raw history JSON in DIR (handy for local runs)
+//   --no-intro    leave out the written intro (stats only)
 //
 // The webhook URL comes from the DISCORD_WEBHOOK_URL environment variable.
 
 import { loadBasketSeries } from "./lib/history.mjs";
 import { pointRpi } from "../public/assets/js/lib/rpi.js";
-import { DEFAULT_BASKET, ITEM_ID } from "../public/assets/js/lib/basket.js";
+import { DEFAULT_BASKET, ITEM_ID, ITEM_CATEGORY } from "../public/assets/js/lib/basket.js";
 import { todayDay, toDay, fromDay } from "../public/assets/js/lib/dates.js";
-import { recapWindow, itemMove, selectMovers, contextText, buildEmbed, discordPayload } from "./lib/recap.mjs";
+import { recapWindow, itemMove, selectMovers, lookback, contextText, categoryChanges, breadth, buildEmbed, discordPayload } from "./lib/recap.mjs";
+import { writeIntro } from "./lib/intro.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -71,10 +73,21 @@ async function main() {
     const m = itemMove(s, win.start, win.end);
     if (m) moves.push({ name, ...m });
   }
-  const movers = selectMovers(moves).map((m) => ({ ...m, context: contextText(getSeries(m.name), win.end, Math.sign(m.change)) }));
+  const movers = selectMovers(moves).map((m) => {
+    const s = getSeries(m.name), dir = Math.sign(m.change);
+    const context = contextText(s, win.end, dir);
+    const back = lookback(s, win.end, dir);
+    // How far back the "lowest/highest since" reaches (records count as unlimited); 0 when no context is shown.
+    const lookbackDays = !context ? 0 : back.kind === "since" ? win.end - back.day : Infinity;
+    return { ...m, context, lookbackDays };
+  });
   const rpi = pointRpi(DEFAULT_BASKET, getSeries, win.start, win.end);
+  const basket = { value: rpi.value, items: rpi.items.length };
 
-  const embed = buildEmbed({ window: win, movers, basket: { value: rpi.value, items: rpi.items.length }, siteUrl: SITE_URL });
+  const intro = flag("--no-intro")
+    ? ""
+    : writeIntro({ basket, breadth: breadth(rpi.items), categories: categoryChanges(rpi.items, ITEM_CATEGORY), movers }, win.end);
+  const embed = buildEmbed({ window: win, movers, basket, siteUrl: SITE_URL, commentary: intro });
   console.log(`\n${embed.title}\n${embed.description}\n\n(${moves.length} items eligible, ${movers.length} reported)`);
 
   if (dryRun) {
