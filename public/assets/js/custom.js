@@ -1,6 +1,6 @@
 import { $, $$, esc, pct, gp, trendClass, initTheme, lineChart, store } from "./ui.js";
 import { loadMapping, loadSeries, loadBasketSeries } from "./api.js";
-import { DEFAULT_BASKET } from "./lib/basket.js";
+import { DEFAULT_BASKET, BASKET_CATEGORIES } from "./lib/basket.js";
 import { pointRpi, singleItem } from "./lib/rpi.js";
 import { todayDay, toDay, fromDay, formatDay } from "./lib/dates.js";
 
@@ -96,7 +96,7 @@ function drawBasket() {
         <span class="share">${((w / total) * 100).toFixed(1)}%</span>
         <button class="btn small ghost" type="button" data-remove="${esc(n)}" aria-label="Remove ${esc(n)}">✕</button>
       </li>`).join("")
-    : `<li class="muted">Your basket is empty. Add items above or load the default basket.</li>`;
+    : `<li class="muted">Your basket is empty. Add items above, or load a category from the default basket.</li>`;
 }
 $("#basket-list").addEventListener("change", (e) => {
   const n = e.target.dataset.weight;
@@ -123,7 +123,18 @@ function addItem() {
 }
 $("#basket-add").addEventListener("click", addItem);
 $("#basket-item").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } });
-$("#basket-default").addEventListener("click", () => { basket = { ...DEFAULT_BASKET }; saveBasket(); drawBasket(); });
+// Load a category (or the whole default basket) with its index weights.
+const preset = $("#basket-preset");
+for (const c of BASKET_CATEGORIES) preset.insertAdjacentHTML("beforeend", `<option value="${esc(c.name)}">${esc(c.name)} (${c.items.length})</option>`);
+preset.insertAdjacentHTML("beforeend", `<option value="*">Entire default basket (${Object.keys(DEFAULT_BASKET).length}, slow)</option>`);
+preset.addEventListener("change", () => {
+  const v = preset.value;
+  if (!v) return;
+  const items = v === "*" ? Object.entries(DEFAULT_BASKET) : BASKET_CATEGORIES.find((c) => c.name === v).items.map(([, n, w]) => [n, w]);
+  for (const [n, w] of items) basket[n] = Math.round(w * 10000) / 10000;
+  saveBasket(); drawBasket();
+  preset.value = "";
+});
 $("#basket-clear").addEventListener("click", () => { basket = {}; saveBasket(); drawBasket(); });
 drawBasket();
 

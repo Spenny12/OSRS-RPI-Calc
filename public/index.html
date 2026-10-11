@@ -39,11 +39,11 @@
   <div class="page-head">
     <span class="eyebrow">Lil Chungies Inflation Index</span>
     <h1>How fast is gold losing value in Gielinor?</h1>
-    <p>The OSRS RPI is a weighted inflation rate for a basket of 99 popular items: potions, skilling supplies, food, runes, ammunition and high-end PvM gear. If an item has no price data for a period, it is left out and the remaining weights are rescaled. No skibidi toilet.</p>
+    <p>The OSRS RPI is a weighted inflation rate for a basket of <span data-basket-size>680+</span> of the most actively traded items on the Grand Exchange, from runes, food and potions to skilling supplies, everyday PvM gear and mega rares. It is rebuilt every day from official GE prices. No skibidi toilet.</p>
   </div>
 
   <div class="progress" id="load-progress" role="status" aria-live="polite">
-    <span id="load-text">Loading price history…</span>
+    <span id="load-text">Loading the index…</span>
     <div class="progress-bar" aria-hidden="true"><span id="load-bar"></span></div>
   </div>
   <div id="load-error" class="alert" hidden></div>
@@ -78,7 +78,7 @@
     <div class="section-head">
       <div>
         <h2 id="hist-h">Historical OSRS RPI</h2>
-        <p>Each point is the year-on-year change in average prices for that calendar month.</p>
+        <p>Each point is the year-on-year change in average prices for that calendar month. Hover to see how many items were tradeable at the time.</p>
       </div>
       <div class="segmented" role="group" aria-label="Chart range" id="range">
         <button type="button" data-years="1" aria-pressed="false">1Y</button>
@@ -104,9 +104,12 @@
     <div class="section-head">
       <div>
         <h2 id="items-h">Basket items</h2>
-        <p>Last full month vs the same month last year. Sorted by contribution to the headline figure; click a column heading to re-sort.</p>
+        <p>Average price last month vs the same month a year earlier. Sorted by contribution to the headline figure; click a column heading to re-sort.</p>
       </div>
-      <input type="search" id="item-filter" placeholder="Filter items…" aria-label="Filter items" style="max-width:240px">
+      <div class="row" style="gap:var(--space-2)">
+        <select id="cat-filter" aria-label="Filter by category"><option value="">All categories</option></select>
+        <input type="search" id="item-filter" placeholder="Search items…" aria-label="Search items" style="max-width:220px">
+      </div>
     </div>
     <div class="card table-scroll">
       <table id="items-table">
@@ -116,10 +119,11 @@
           <th class="r"><button data-sort="share">Weight</button></th>
           <th class="r"><button data-sort="oldPrice">A year ago</button></th>
           <th class="r"><button data-sort="newPrice">Last month</button></th>
+          <th class="r"><button data-sort="latest">Latest</button></th>
           <th class="r"><button data-sort="change">Change</button></th>
           <th class="r"><button data-sort="contribution">Contribution</button></th>
         </tr></thead>
-        <tbody><tr><td colspan="7"><div class="skeleton" style="height:120px"></div></td></tr></tbody>
+        <tbody><tr><td colspan="8"><div class="skeleton" style="height:120px"></div></td></tr></tbody>
       </table>
       <div style="padding-top:var(--space-4);text-align:center"><button class="btn small" id="items-more" type="button" hidden>Show all items</button></div>
     </div>
@@ -129,21 +133,35 @@
   <section aria-labelledby="hc-h">
     <div class="section-head">
       <div>
-        <h2 id="hc-h">Look up a past date</h2>
-        <p>See the week-on-week change and the last-full-month YoY figure as they would have looked on a past date.</p>
+        <h2 id="hc-h">Look up a past month</h2>
+        <p>Pick any month to see its year-on-year and month-on-month change in average prices.</p>
       </div>
     </div>
     <div class="card">
       <form class="row" id="historic-form">
-        <div class="field"><label for="historic-date">Date</label><input type="date" id="historic-date" required></div>
-        <button class="btn primary" type="submit">Calculate</button>
+        <div class="field"><label for="historic-month">Month</label><input type="month" id="historic-month" required></div>
+        <button class="btn primary" type="submit">Look up</button>
       </form>
       <div id="historic-out"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="method-h">
+    <div class="section-head"><div><h2 id="method-h">How the index works</h2></div></div>
+    <div class="card method">
+      <ul>
+        <li><strong>The basket</strong> holds every item averaging at least 10 trades and 25m gp a day (75m gp for equipment) on the GE over 30 days. Cosmetics, duplicates, notes, teleports, keys and lottery items are left out.</li>
+        <li><strong>Weights.</strong> Each of the 13 categories has a fixed share of the index. Within a category, items are weighted by the square root of their daily gp traded, so busy items count for more but a few billion-gp items can't drown out everything else.</li>
+        <li><strong>New items</strong> join after 60 days on the GE, once their guide price has settled. Before release they're simply left out and the other weights are rescaled.</li>
+        <li><strong>Anomalies.</strong> A price that moves more than 10× within one comparison is set aside as a likely data glitch and listed under "excluded".</li>
+        <li><strong>Data</strong> are official GE guide prices. The index is rebuilt daily, and the last update is shown at the bottom of the page.</li>
+      </ul>
     </div>
   </section>
 </main>
 <footer>
   <div class="inner">
+    <p id="data-stamp"></p>
     <p>Created by Mod Kieren and Mod Spenny for the Lil Chungies. Not affiliated with Jagex.</p>
     <p>Price data: Grand Exchange guide prices via the <a href="https://api.weirdgloop.org/" rel="noopener">Weird Gloop API</a>; item list from the <a href="https://prices.runescape.wiki/" rel="noopener">OSRS Wiki real-time prices API</a>. Source on <a href="https://github.com/Spenny12/OSRS-RPI-Calc" rel="noopener">GitHub</a>.</p>
   </div>

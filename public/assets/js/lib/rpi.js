@@ -33,7 +33,28 @@ export class PriceSeries {
   }
 }
 
+/** First day of Weird Gloop's OSRS GE history (28 Mar 2015). Items starting later are new releases. */
+export const HISTORY_START_DAY = 16522;
+/** New items join the index only after this many days on the GE, once their guide price has settled. */
+export const NEW_ITEM_BURN_IN_DAYS = 60;
+
+/** Drops the first `days` days of a series if the item was released after GE tracking began. */
+export function withBurnIn(series, days = NEW_ITEM_BURN_IN_DAYS) {
+  if (!series || series.empty || series.start <= HISTORY_START_DAY + 7) return series;
+  if (series.prices.length <= days) return null;
+  return new PriceSeries({ start: series.start + days, prices: series.prices.slice(days) });
+}
+
 export const pctChange = (oldP, newP) => ((newP - oldP) / oldP) * 100;
+
+/** Price moves bigger than this factor (either way) are treated as data anomalies, not inflation. */
+export const MAX_PRICE_RATIO = 10;
+
+function outlier(oldP, newP, maxRatio) {
+  const r = newP / oldP;
+  return r > maxRatio || r < 1 / maxRatio;
+}
+const OUTLIER_REASON = (r) => `Price moved ${r >= 1 ? r.toFixed(0) + "× up" : (1 / r).toFixed(0) + "× down"}, set aside as a likely data anomaly`;
 
 const valid = (p) => p != null && Number.isFinite(p) && p > 0;
 
@@ -54,7 +75,7 @@ function combine(rows, excluded) {
  * @param {Record<string, number>} basket   itemName -> weight
  * @param {(name:string)=>PriceSeries|null} getSeries
  */
-export function pointRpi(basket, getSeries, startDay, endDay) {
+export function pointRpi(basket, getSeries, startDay, endDay, { maxRatio = MAX_PRICE_RATIO } = {}) {
   const rows = [];
   const excluded = [];
   for (const [name, weight] of Object.entries(basket)) {
@@ -65,13 +86,14 @@ export function pointRpi(basket, getSeries, startDay, endDay) {
     const newP = s.asof(endDay);
     if (!valid(oldP)) { excluded.push({ name, reason: "No price on or before the start date" }); continue; }
     if (!valid(newP)) { excluded.push({ name, reason: "No price on or before the end date" }); continue; }
+    if (outlier(oldP, newP, maxRatio)) { excluded.push({ name, reason: OUTLIER_REASON(newP / oldP) }); continue; }
     rows.push({ name, weight, oldPrice: oldP, newPrice: newP, change: pctChange(oldP, newP) });
   }
   return combine(rows, excluded);
 }
 
 /** Weighted basket inflation comparing average prices over two periods. */
-export function periodRpi(basket, getSeries, oldRange, newRange) {
+export function periodRpi(basket, getSeries, oldRange, newRange, { maxRatio = MAX_PRICE_RATIO } = {}) {
   const rows = [];
   const excluded = [];
   for (const [name, weight] of Object.entries(basket)) {
@@ -82,16 +104,17 @@ export function periodRpi(basket, getSeries, oldRange, newRange) {
     const newP = s.average(newRange.start, newRange.end);
     if (!valid(oldP)) { excluded.push({ name, reason: "No prices in the earlier period" }); continue; }
     if (!valid(newP)) { excluded.push({ name, reason: "No prices in the later period" }); continue; }
+    if (outlier(oldP, newP, maxRatio)) { excluded.push({ name, reason: OUTLIER_REASON(newP / oldP) }); continue; }
     rows.push({ name, weight, oldPrice: oldP, newPrice: newP, change: pctChange(oldP, newP) });
   }
   return combine(rows, excluded);
 }
 
 /** Year-on-year comparison of the last full month before `anchorDay`. */
-export function lastMonthYoY(basket, getSeries, anchorDay) {
+export function lastMonthYoY(basket, getSeries, anchorDay, opts) {
   const cur = previousMonth(anchorDay);
   const prev = { start: minusYears(cur.start), end: minusYears(cur.end) };
-  return { ...periodRpi(basket, getSeries, prev, cur), current: cur, previous: prev };
+  return { ...periodRpi(basket, getSeries, prev, cur, opts), current: cur, previous: prev };
 }
 
 /**
@@ -99,7 +122,7 @@ export function lastMonthYoY(basket, getSeries, anchorDay) {
  * comparison year is 2015 or later (same stopping rules as the Python app).
  * @returns {Array<{month:number, value:number, itemCount:number}>} oldest first; month = last day of month
  */
-export function monthlyHistory(basket, getSeries, todayDay, maxMonths = 240) {
+export function monthlyHistory(basket, getSeries, todayDay, maxMonths = 240, opts) {
   const out = [];
   let { y, m } = parts(todayDay);
   for (let i = 0; i < maxMonths; i++) {
@@ -107,7 +130,7 @@ export function monthlyHistory(basket, getSeries, todayDay, maxMonths = 240) {
     const cur = previousMonth(firstOfMonth + 1);
     const prev = { start: minusYears(cur.start), end: minusYears(cur.end) };
     if (parts(prev.start).y <= 2014) break;
-    const r = periodRpi(basket, getSeries, prev, cur);
+    const r = periodRpi(basket, getSeries, prev, cur, opts);
     if (r.value == null) break;
     out.push({ month: cur.end, value: r.value, itemCount: r.items.length });
     m -= 1;

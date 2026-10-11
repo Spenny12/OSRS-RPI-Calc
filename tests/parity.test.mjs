@@ -6,10 +6,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { compactHistory } from "../public/assets/js/lib/compact.js";
 import { PriceSeries, pointRpi, lastMonthYoY, monthlyHistory, singleItem } from "../public/assets/js/lib/rpi.js";
-import { DEFAULT_BASKET } from "../public/assets/js/lib/basket.js";
 import { toDay, fromDay } from "../public/assets/js/lib/dates.js";
 
 const DIR = process.env.PARITY_DIR;
+// The original Python app's 99-item basket, with no outlier guard.
+const DEFAULT_BASKET = JSON.parse(fs.readFileSync(new URL("./fixtures/legacy-basket.json", import.meta.url), "utf8"));
+const RAW = { maxRatio: Infinity };
 
 // The Python app filled data gaps with bfill() before ffill(), i.e. with the
 // NEXT known price (a look-ahead bug). The port deliberately forward-fills
@@ -45,11 +47,11 @@ test("JS port matches original Python calculator", { skip: !enabled && "set PARI
   const close = (a, b, tol, label) => assert.ok(Math.abs(a - b) < tol, `${label}: js=${a} py=${b}`);
 
   close(pointRpi(DEFAULT_BASKET, get, toDay("2025-10-04"), toDay("2026-10-04")).value, ref.yoy7, 0.02, "yoy7");
-  close(pointRpi(DEFAULT_BASKET, get, toDay("2025-09-11"), toDay("2026-09-11")).value, ref.yoy30, 0.02, "yoy30");
-  close(pointRpi(DEFAULT_BASKET, get, today - 7, today).value, ref.wow, 0.02, "wow");
-  close(lastMonthYoY(DEFAULT_BASKET, get, today).value, ref.lastMonth, 0.02, "lastMonth");
+  close(pointRpi(DEFAULT_BASKET, get, toDay("2025-09-11"), toDay("2026-09-11"), RAW).value, ref.yoy30, 0.02, "yoy30");
+  close(pointRpi(DEFAULT_BASKET, get, today - 7, today, RAW).value, ref.wow, 0.02, "wow");
+  close(lastMonthYoY(DEFAULT_BASKET, get, today, RAW).value, ref.lastMonth, 0.02, "lastMonth");
 
-  const hist = monthlyHistory(DEFAULT_BASKET, get, today);
+  const hist = monthlyHistory(DEFAULT_BASKET, get, today, 240, RAW);
   assert.equal(hist.length, ref.history.length, "history length");
   hist.forEach((h, i) => {
     assert.equal(fromDay(h.month), ref.history[i][0]);

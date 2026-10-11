@@ -102,6 +102,7 @@ export function lineChart(canvas, points, opts) {
             callbacks: {
               title: (items) => formatDay(items[0].parsed.x, opts.tooltipDate || undefined),
               label: (item) => `${opts.label}: ${opts.yFormat(item.parsed.y)}`,
+              afterLabel: (item) => (opts.afterLabel ? opts.afterLabel(item.parsed.x) : ""),
             },
           },
         },
