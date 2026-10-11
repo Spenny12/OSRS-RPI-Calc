@@ -84,9 +84,12 @@ async function main() {
   const rpi = pointRpi(DEFAULT_BASKET, getSeries, win.start, win.end);
   const basket = { value: rpi.value, items: rpi.items.length };
 
+  // The basket's move in each of the 12 weeks before this one (most recent first), so the intro can spot streaks and turnarounds.
+  const previous = Array.from({ length: 12 }, (_, i) => pointRpi(DEFAULT_BASKET, getSeries, win.start - 7 * (i + 1), win.end - 7 * (i + 1)).value);
+
   const intro = flag("--no-intro")
     ? ""
-    : writeIntro({ basket, breadth: breadth(rpi.items), categories: categoryChanges(rpi.items, ITEM_CATEGORY), movers }, win.end);
+    : writeIntro({ basket, breadth: breadth(rpi.items), categories: categoryChanges(rpi.items, ITEM_CATEGORY), movers, previous }, win.end);
   const embed = buildEmbed({ window: win, movers, basket, siteUrl: SITE_URL, commentary: intro });
   console.log(`\n${embed.title}\n${embed.description}\n\n(${moves.length} items eligible, ${movers.length} reported)`);
 
